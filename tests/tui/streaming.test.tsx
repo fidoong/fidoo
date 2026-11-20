@@ -27,12 +27,15 @@ describe("streaming timeline", () => {
       expect(view.lastFrame()?.match(/First paragraph/g)).toHaveLength(1);
       expect(view.lastFrame()?.match(/Second paragraph/g)).toHaveLength(1);
       expect(view.lastFrame()).toContain("Reasoning");
-      expect(view.lastFrame()).not.toContain("Check the tests first.");
+      expect(view.lastFrame()).not.toContain("First hidden line");
+      expect(view.lastFrame()).toContain("Second preview line");
+      expect(view.lastFrame()).toContain("Third preview line");
+      expect(view.lastFrame()).toContain("Fourth preview line");
       view.stdin.write("\u0012");
-      await vi.waitFor(() => expect(view.lastFrame()).toContain("Check the tests first."));
+      await vi.waitFor(() => expect(view.lastFrame()).toContain("First hidden line"));
       expect(view.lastFrame()).toContain("transient, not saved to history");
       view.stdin.write("\u0012");
-      await vi.waitFor(() => expect(view.lastFrame()).not.toContain("Check the tests first."));
+      await vi.waitFor(() => expect(view.lastFrame()).not.toContain("First hidden line"));
     } finally {
       view.unmount();
     }
@@ -52,7 +55,9 @@ class StreamingTransport implements AgentTransport {
     yield event(2, "message.user", {
       message: { role: "user", source: "user", content: "Stream" },
     });
-    yield event(2, "message.reasoning.delta", { text: "Check the tests first." });
+    yield event(2, "message.reasoning.delta", {
+      text: "First hidden line\nSecond preview line\nThird preview line\nFourth preview line",
+    });
     yield event(2, "message.assistant.delta", { text: "First paragraph\n\n" });
     yield event(2, "message.assistant.delta", { text: "Second paragraph\n\n" });
     yield event(2, "message.assistant.delta", { text: "Tail" });

@@ -175,7 +175,7 @@ interface TuiState {
 - `Tab`：补全 slash command。
 - `Ctrl+O`：展开或折叠当前工具输出详情。
 - `Ctrl+K`：空闲时打开命令面板，方向键选择，Enter 执行，Esc 关闭。
-- `Ctrl+R`：展开或折叠当前模型推理；折叠时只显示状态、耗时和字符数。
+- `Ctrl+R`：展开或折叠当前模型推理；折叠时预览最近 3 行并显示状态、耗时和字符数。
 
 Slash commands：
 
@@ -211,11 +211,11 @@ TUI 包只负责主题解析与应用；CLI 负责配置文件读写，避免把
 
 - 已完成消息与工具按 seq 合并到同一个 Ink `Static` 时间线，只追加新内容；活动工具、流式回复和 Ctrl+O 输出详情保持动态。
 - `onTextDelta` 与 `onReasoningDelta` 在 `AgentController` 中按 50ms 分别合批，渲染入口限制 `maxFps: 20`。完整段落和闭合代码块以连续排版追加到 Static，动态区域只保留未完成块，避免终端捕获整篇擦写产生的空白中间帧。
-- `message.reasoning.delta` 是独立临时事件，不写入事件存储、不进入历史 Trace，也不与正式回答 Markdown 混合。Reasoning 面板默认只显示状态、耗时和字符数，Ctrl+R 展开最近 24 行；内存最多保留最近 64K 字符。
+- `message.reasoning.delta` 是独立临时事件，不写入事件存储、不进入历史 Trace，也不与正式回答 Markdown 混合。Reasoning 面板默认预览最近 3 行并显示状态、耗时和字符数，Ctrl+R 展开最近 24 行；内存最多保留最近 64K 字符。
 - Run plan 由真实运行事件推导：Inspect 随首次工具结果或回答完成，Change 随文件修改工具推进，Verify 随验证事件推进，Report 只在终态完成；未发生的修改和验证标记为 skipped，不伪造模型计划。
 - `run.completed.summary` 不再作为纯文本 notice 重复输出；Agent 消息是唯一 Markdown 正文，完成通知只保留简短验证状态。
 - Agent 正文使用 marked token 流式 Markdown 渲染，支持标题、粗体、列表、链接、引用、表格和代码块；代码与 Bash 命令使用独立高亮组件。
-- 大工具输出默认折叠，当前 Ctrl+O 限长查看最后输出；Artifact 分页读取与独立查看器作为下一步，避免把几万行文本一次性交给 Ink。
+- 工具批次保留最近 2 条完整调用，更早的调用合并为一行汇总；大工具输出默认折叠，当前 Ctrl+O 限长查看最后输出；Artifact 分页读取与独立查看器作为下一步，避免把几万行文本一次性交给 Ink。
 - 所有文本按终端宽度换行；80×24 是可用的最低验收尺寸。
 - 非 TTY 不进入 raw mode；TUI 独占输出时禁止其他组件直接写 stdout/stderr。
 - 首版保留系统终端滚动历史，不急着启用 alternate screen；全屏模式作为后续选项。

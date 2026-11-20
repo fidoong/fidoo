@@ -66,16 +66,18 @@ export const ToolGroupCard = memo(function ToolGroupCard({ tools }: { tools: Too
       tool.name !== "write_file" &&
       tool.name !== "report_blocked",
   );
-  const featured = tools.filter((tool) => !routine.includes(tool));
+  const hiddenRoutine = routine.slice(0, -2);
+  const visibleRoutine = routine.slice(-2);
+  const featured = [...visibleRoutine, ...tools.filter((tool) => !routine.includes(tool))];
   return (
     <Box flexDirection="column">
-      {routine.length > 0 ? (
+      {hiddenRoutine.length > 0 ? (
         <Text wrap="wrap">
           <Text color={theme.success}>✓ </Text>
           <Text bold>
-            {routine.length} tool {routine.length === 1 ? "call" : "calls"}
+            {hiddenRoutine.length} earlier tool {hiddenRoutine.length === 1 ? "call" : "calls"}
           </Text>
-          <Text dimColor> · {formatToolBreakdown(routine)}</Text>
+          <Text dimColor> · {formatToolBreakdown(hiddenRoutine)}</Text>
         </Text>
       ) : null}
       {featured.map((tool) => (

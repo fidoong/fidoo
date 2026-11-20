@@ -36,9 +36,9 @@ describe("TUI keyboard flow", () => {
     const frame = lastFrame() ?? "";
     expect(frame.indexOf("ƒ fidoo")).toBeLessThan(frame.indexOf("Keyboard task"));
     stdin.write("\u0012");
-    await vi.waitFor(() => expect(lastFrame()).toContain("Reason before approval."));
+    await vi.waitFor(() => expect(lastFrame()).toContain("Hidden setup"));
     stdin.write("\u0012");
-    await vi.waitFor(() => expect(lastFrame()).not.toContain("Reason before approval."));
+    await vi.waitFor(() => expect(lastFrame()).not.toContain("Hidden setup"));
     stdin.write("y");
     await vi.waitFor(() => expect(lastFrame()).toContain("completed"));
     expect(lastFrame()).toContain("Edited value.mjs");
@@ -211,7 +211,9 @@ class KeyboardTransport implements AgentTransport {
     yield event(4, "message.assistant", {
       message: { role: "assistant", content: "I will edit the file." },
     });
-    yield event(4, "message.reasoning.delta", { text: "Reason before approval." });
+    yield event(4, "message.reasoning.delta", {
+      text: "Hidden setup\nPreview one\nPreview two\nReason before approval.",
+    });
     yield event(5, "tool.proposed", {
       call: { id: "edit", name: "edit_file", arguments: '{"path":"value.mjs"}' },
     });

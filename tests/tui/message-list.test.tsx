@@ -36,9 +36,9 @@ describe("MessageList", () => {
     view.rerender(
       <MessageList messages={[]} streamingText="Working on the answer" tools={tools} />,
     );
-    expect(view.lastFrame()).toContain("30 tool calls · bash ×30");
+    expect(view.lastFrame()).toContain("28 earlier tool calls · bash ×28");
     expect(view.lastFrame()).toContain("Working on the answer");
-    expect(view.lastFrame()).not.toContain("bash · pnpm typecheck · success");
+    expect(view.lastFrame()?.match(/bash · pnpm typecheck · success/g)).toHaveLength(2);
 
     view.rerender(
       <MessageList
@@ -47,9 +47,9 @@ describe("MessageList", () => {
         tools={tools}
       />,
     );
-    expect(view.lastFrame()).toContain("30 tool calls · bash ×30");
+    expect(view.lastFrame()).toContain("28 earlier tool calls · bash ×28");
     expect(view.lastFrame()).toContain("Final answer");
-    expect(view.lastFrame()).not.toContain("bash · pnpm typecheck · success");
+    expect(view.lastFrame()?.match(/bash · pnpm typecheck · success/g)).toHaveLength(2);
     view.unmount();
   });
 

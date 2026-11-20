@@ -21,6 +21,11 @@ export function ReasoningPanel({ state, expanded }: { state: TuiState; expanded:
   const endedAt = state.reasoningActive ? now : (state.reasoningEndedAt ?? now);
   const elapsed = Math.max(0, endedAt - (state.reasoningStartedAt ?? endedAt));
   const lines = state.reasoningText.slice(-6000).split("\n").slice(-24);
+  const previewLines = state.reasoningText
+    .split("\n")
+    .filter((line) => line.trim())
+    .slice(-3);
+  const visibleLines = expanded ? lines : previewLines;
   const occurrences = new Map<string, number>();
   return (
     <Box
@@ -41,18 +46,21 @@ export function ReasoningPanel({ state, expanded }: { state: TuiState; expanded:
           {expanded ? "collapse" : "expand"}
         </Text>
       </Box>
-      {expanded ? (
+      {visibleLines.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
-          {lines.map((line) => {
+          {visibleLines.map((line) => {
             const occurrence = (occurrences.get(line) ?? 0) + 1;
             occurrences.set(line, occurrence);
+            const limit = expanded ? 300 : 160;
             return (
               <Text key={`${line.slice(0, 64)}-${occurrence}`} dimColor wrap="wrap">
-                {line.length > 300 ? `${line.slice(0, 297)}...` : line || " "}
+                {line.length > limit ? `${line.slice(0, limit - 3)}...` : line || " "}
               </Text>
             );
           })}
-          <Text dimColor>Latest {lines.length} lines · transient, not saved to history</Text>
+          {expanded ? (
+            <Text dimColor>Latest {lines.length} lines · transient, not saved to history</Text>
+          ) : null}
         </Box>
       ) : null}
     </Box>

@@ -89,7 +89,7 @@ apps/agent-server ───────► api ────► core
 - 公共 DTO 使用 camelCase；内部事件保持现有领域格式，由 API 层映射。
 - 所有请求带 `requestId`，所有持久运行事件带 `runId + seq + eventId`。
 - 持久事件可通过 `afterSeq` 重放；流式 text/reasoning delta 使用独立临时通知，不写事件库，重连时先取 `run.get` 快照再接续持久事件。
-- 持久 `message.assistant` 不返回原始 `reasoningContent`、Provider 私有凭证、绝对敏感路径或密钥。原始推理只通过明确类型的 `message.reasoning.delta` 临时推送，TUI 默认折叠且不落盘。
+- 持久 `message.assistant` 不返回原始 `reasoningContent`、Provider 私有凭证、绝对敏感路径或密钥。原始推理只通过明确类型的 `message.reasoning.delta` 临时推送，TUI 默认提供最近 3 行预览且不落盘。
 - 大输出只返回 Artifact 元数据与受限读取接口，不在事件里重复发送全文。
 - 写操作和验证结果使用结构化 DTO，客户端不解析文本 diff 或命令输出猜测状态。
 
