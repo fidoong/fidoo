@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "sourceMap": true,
+    "paths": {
+      "@fidoo/core": ["./packages/core/src/index.ts"],
+      "@fidoo/node-runtime": ["./packages/node-runtime/src/index.ts"],
+      "@fidoo/protocol": ["./packages/protocol/src/index.ts"],
+      "@fidoo/api": ["./packages/api/src/index.ts"],
+      "@fidoo/client": ["./packages/client/src/index.ts"],
+      "@fidoo/client/stdio": ["./packages/client/src/stdio.ts"],
+      "@fidoo/agent-server": ["./apps/agent-server/src/stdio-server.ts"],
+      "@fidoo/tui": ["./packages/tui/src/index.tsx"]
+    }
+  },
+  "include": ["apps", "packages", "tests", "*.config.ts"],
+  "exclude": ["**/dist", "**/node_modules"]
+}

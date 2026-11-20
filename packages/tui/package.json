@@ -1,0 +1,24 @@
+{
+  "name": "@fidoo/tui",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@fidoo/client": "workspace:^",
+    "@fidoo/protocol": "workspace:^",
+    "ink": "^8.0.0",
+    "marked": "^18.2.1",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0"
+  }
+}

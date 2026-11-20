@@ -1,0 +1,22 @@
+{
+  "name": "@fidoo/node-runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@fidoo/core": "workspace:^",
+    "execa": "^10.2.1",
+    "fast-glob": "^3.3.3",
+    "ignore": "^7.0.16",
+    "openai": "^7.59.0",
+    "zod": "^4.6.7"
+  }
+}

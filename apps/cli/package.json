@@ -1,0 +1,20 @@
+{
+  "name": "@fidoo/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "fidoo": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@fidoo/api": "workspace:^",
+    "@fidoo/client": "workspace:^",
+    "@fidoo/core": "workspace:^",
+    "@fidoo/node-runtime": "workspace:^",
+    "@fidoo/protocol": "workspace:^",
+    "@fidoo/tui": "workspace:^",
+    "commander": "^15.1.0"
+  }
+}

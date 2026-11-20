@@ -1,0 +1,39 @@
+{
+  "name": "fidoo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "bin": {
+    "fidoo": "apps/cli/dist/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "build:watch": "pnpm -r --parallel build -- --watch",
+    "dev": "node scripts/dev.mjs",
+    "dev:once": "tsx apps/cli/src/index.ts",
+    "dev:debug": "node scripts/dev.mjs --debug",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "eval:offline": "vitest run tests/e2e",
+    "eval:smoke": "pnpm eval:offline"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "execa": "^10.2.1",
+    "ink-testing-library": "^4.0.0",
+    "react": "^19.3.1",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.1"
+  }
+}

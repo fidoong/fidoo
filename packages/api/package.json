@@ -1,0 +1,19 @@
+{
+  "name": "@fidoo/api",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@fidoo/core": "workspace:^",
+    "@fidoo/protocol": "workspace:^",
+    "zod": "^4.6.7"
+  }
+}
