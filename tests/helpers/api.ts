@@ -1,7 +1,13 @@
 import { AgentApi, InProcessTransport } from "@fidoo/api";
 import { createAgentClient } from "@fidoo/client";
 import type { AssistantMessage, PermissionMode } from "@fidoo/core";
-import { BASE_SYSTEM_PROMPT, PolicyEngine, RunService, ToolRegistry } from "@fidoo/core";
+import {
+  BASE_SYSTEM_PROMPT,
+  PolicyEngine,
+  RunService,
+  ToolRegistry,
+  updatePlanTool,
+} from "@fidoo/core";
 import {
   createCodingTools,
   LocalWorkspace,
@@ -27,7 +33,7 @@ export function testApi(
         store,
         workspace,
         artifacts,
-        tools: new ToolRegistry(createCodingTools()),
+        tools: new ToolRegistry([updatePlanTool, ...createCodingTools()]),
         approval: approval ?? approveAll,
         policy: new PolicyEngine(options.permission ?? "auto"),
         systemPrompt: BASE_SYSTEM_PROMPT,
@@ -36,6 +42,7 @@ export function testApi(
       });
     },
     eventStore: store,
+    artifacts,
     workspace,
   });
   const client = createAgentClient(new InProcessTransport(api));

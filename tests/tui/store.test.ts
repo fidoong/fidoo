@@ -112,6 +112,37 @@ describe("TUI event projection", () => {
     expect(state.reasoningText.startsWith("…")).toBe(true);
   });
 
+  it("restores the latest durable task plan from public events", () => {
+    let state = initialTuiState();
+    state = applyRunEvent(
+      state,
+      event(1, "plan.updated", {
+        plan: {
+          id: "plan-1",
+          title: "Initial plan",
+          revision: 1,
+          steps: [{ id: "inspect", title: "Inspect", status: "in_progress" }],
+        },
+      }),
+    );
+    state = applyRunEvent(
+      state,
+      event(2, "plan.updated", {
+        plan: {
+          id: "plan-1",
+          title: "Replanned",
+          revision: 2,
+          steps: [
+            { id: "inspect", title: "Inspect", status: "completed", evidence: "Observed" },
+            { id: "verify", title: "Verify", status: "in_progress" },
+          ],
+        },
+      }),
+    );
+    expect(state.taskPlan).toMatchObject({ title: "Replanned", revision: 2 });
+    expect(state.taskPlan?.steps).toHaveLength(2);
+  });
+
   it("accumulates persistent usage across model requests", () => {
     let state = initialTuiState();
     state = applyRunEvent(state, event(1, "model.usage", { inputTokens: 1200, outputTokens: 300 }));

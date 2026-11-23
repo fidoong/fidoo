@@ -1,4 +1,4 @@
-import type { PublicRunEvent, RunSummary } from "@fidoo/protocol";
+import type { ArtifactPage, PublicRunEvent, RunSummary } from "@fidoo/protocol";
 import { Box, Text, useApp, useInput } from "ink";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { AgentController } from "./agent-controller.js";
@@ -9,6 +9,7 @@ import { CommandDialog } from "./components/command-dialog.js";
 import { Composer } from "./components/composer.js";
 import { HelpDialog } from "./components/help-dialog.js";
 import { MessageList } from "./components/message-list.js";
+import { OutputDialog } from "./components/output-dialog.js";
 import { PlanPanel } from "./components/plan-panel.js";
 import { ReasoningPanel } from "./components/reasoning-panel.js";
 import { SessionsDialog } from "./components/sessions-dialog.js";
@@ -33,12 +34,25 @@ export interface TuiAppOptions {
   onThemeChange?(theme: ThemePreference): void | Promise<void>;
 }
 
+interface OutputDialogState {
+  type: "output";
+  title: string;
+  artifactId: string | undefined;
+  page: ArtifactPage | undefined;
+  content: string;
+  offset: number;
+  limit: number;
+  loading: boolean;
+  error: string | undefined;
+}
+
 type DialogState =
   | { type: "sessions"; sessions: RunSummary[]; selected: number }
   | { type: "trace"; events: PublicRunEvent[] }
   | { type: "commands"; selected: number }
   | { type: "theme"; selected: number }
-  | { type: "help" };
+  | { type: "help" }
+  | OutputDialogState;
 
 export function TuiApp({
   controller,
@@ -51,7 +65,6 @@ export function TuiApp({
 }) {
   const { exit } = useApp();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
-  const [expanded, setExpanded] = useState(false);
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
   const [exitArmed, setExitArmed] = useState(false);
   const [commandNotice, setCommandNotice] = useState<string>();
@@ -117,6 +130,92 @@ export function TuiApp({
     await controller.loadSession(runId);
   };
 
+  const showArtifact = async (artifactId: string, offset = 0, title?: string) => {
+    const heading = title ?? `Artifact ${artifactId.slice(0, 12)}`;
+    setDialog((current) => ({
+      type: "output",
+      title: heading,
+      artifactId,
+      page:
+        current?.type === "output" && current.artifactId === artifactId ? current.page : undefined,
+      content: "",
+      offset,
+      limit: 200,
+      loading: true,
+      error: undefined,
+    }));
+    try {
+      const page = await controller.readArtifact(artifactId, offset, 200);
+      setDialog((current) =>
+        current?.type === "output" && current.artifactId === artifactId && current.offset === offset
+          ? {
+              ...current,
+              title: heading,
+              page,
+              offset: page.offset,
+              limit: page.limit,
+              loading: false,
+              error: undefined,
+            }
+          : current,
+      );
+    } catch (error) {
+      setDialog((current) =>
+        current?.type === "output" && current.artifactId === artifactId && current.offset === offset
+          ? { ...current, loading: false, error: errorText(error) }
+          : current,
+      );
+    }
+  };
+
+  const showOutput = () => {
+    const tool = state.tools
+      .filter((item) => item.status === "success" || item.status === "error")
+      .toSorted((left, right) => left.seq - right.seq)
+      .at(-1);
+    const artifact = tool?.artifacts?.at(-1);
+    if (tool && artifact) {
+      void showArtifact(artifact.id, 0, `${tool.name} · ${artifact.name}`);
+    } else if (tool?.output) {
+      setDialog({
+        type: "output",
+        title: `${tool.name} output`,
+        artifactId: undefined,
+        page: undefined,
+        content: tool.output,
+        offset: 0,
+        limit: 200,
+        loading: false,
+        error: undefined,
+      });
+    } else {
+      setCommandNotice("No completed tool output is available.");
+    }
+  };
+
+  const pageOutput = (direction: -1 | 1) => {
+    if (dialog?.type !== "output" || dialog.loading) {
+      return;
+    }
+    const totalLines = dialog.page?.totalLines ?? splitLines(dialog.content).length;
+    const currentOffset = dialog.page?.offset ?? dialog.offset;
+    const nextOffset =
+      direction > 0
+        ? (dialog.page?.nextOffset ??
+          (currentOffset + dialog.limit < totalLines
+            ? currentOffset + dialog.limit
+            : currentOffset))
+        : Math.max(0, currentOffset - dialog.limit);
+    if (nextOffset === currentOffset) {
+      return;
+    }
+    if (dialog.artifactId) {
+      void showArtifact(dialog.artifactId, nextOffset, dialog.title);
+    } else {
+      setDialog({ ...dialog, offset: nextOffset });
+    }
+  };
+
   const toggleReasoning = () => {
     if (!state.reasoningText) {
       setCommandNotice("No reasoning has been received from this provider yet.");
@@ -128,11 +227,21 @@ export function TuiApp({
 
   const submit = (value: string) => {
     setCommandNotice(undefined);
+    const active = isActivePhase(state.phase);
+    const allowedDuringRun =
+      value === "/help" ||
+      value === "/trace" ||
+      value === "/theme" ||
+      value === "/reasoning" ||
+      value.startsWith("/artifact ");
+    if (active && value.startsWith("/") && !allowedDuringRun) {
+      setCommandNotice("Finish or cancel the active run before using this command.");
+      return;
+    }
     if (value === "/quit") {
       close();
     } else if (value === "/new") {
       controller.newSession();
-      setExpanded(false);
     } else if (value === "/sessions") {
       void showSessions();
     } else if (value === "/trace") {
@@ -141,6 +250,10 @@ export function TuiApp({
       showTheme();
     } else if (value === "/reasoning") {
       toggleReasoning();
+    } else if (value.startsWith("/artifact ")) {
+      void showArtifact(value.slice("/artifact ".length).trim());
+    } else if (value === "/artifact") {
+      setCommandNotice("Usage: /artifact <id>");
     } else if (value.startsWith("/resume ")) {
       void restoreSession(value.slice("/resume ".length).trim());
     } else if (value === "/resume") {
@@ -150,7 +263,11 @@ export function TuiApp({
     } else if (value.startsWith("/")) {
       setCommandNotice(`Unknown command: ${value}`);
     } else {
-      void controller.submit(value);
+      if (active) {
+        void controller.steer(value).catch((error) => setCommandNotice(errorText(error)));
+      } else {
+        void controller.submit(value);
+      }
     }
   };
 
@@ -167,8 +284,14 @@ export function TuiApp({
       return;
     }
     if (dialog) {
-      if (key.escape) {
+      if (dialog.type === "output" && key.ctrl && input === "o") {
         setDialog(undefined);
+      } else if (key.escape) {
+        setDialog(undefined);
+      } else if (dialog.type === "output" && (key.downArrow || input === "j")) {
+        pageOutput(1);
+      } else if (dialog.type === "output" && (key.upArrow || input === "k")) {
+        pageOutput(-1);
       } else if (key.upArrow && "selected" in dialog) {
         setDialog({ ...dialog, selected: Math.max(0, dialog.selected - 1) });
       } else if (key.downArrow && "selected" in dialog) {
@@ -215,7 +338,7 @@ export function TuiApp({
       return;
     }
     if (key.ctrl && input === "o") {
-      setExpanded((current) => !current);
+      showOutput();
     }
   });
 
@@ -226,7 +349,6 @@ export function TuiApp({
         messages={state.messages}
         streamingText={state.streamingText}
         tools={state.tools}
-        expanded={expanded}
         provider={options.provider}
         model={options.model}
       />
@@ -242,6 +364,8 @@ export function TuiApp({
         <ThemeDialog selected={dialog.selected} current={activeTheme.preset} />
       ) : dialog?.type === "help" ? (
         <HelpDialog />
+      ) : dialog?.type === "output" ? (
+        <OutputDialog {...outputView(dialog)} />
       ) : null}
       {state.notice ? (
         <Text {...(state.phase === "completed" ? { color: theme.success } : { dimColor: true })}>
@@ -256,12 +380,51 @@ export function TuiApp({
         {dialog ? null : state.pendingApproval ? (
           <ApprovalDialog approval={state.pendingApproval} />
         ) : (
-          <Composer enabled={!isActivePhase(state.phase)} onSubmit={submit} />
+          <Composer enabled busy={isActivePhase(state.phase)} onSubmit={submit} />
         )}
       </Box>
       <StatusBar state={state} />
     </Box>
   );
+}
+
+function outputView(dialog: OutputDialogState) {
+  if (dialog.page) {
+    return {
+      title: dialog.title,
+      content: dialog.page.content,
+      offset: dialog.page.offset,
+      limit: dialog.page.limit,
+      totalLines: dialog.page.totalLines,
+      nextOffset: dialog.page.nextOffset,
+      loading: dialog.loading,
+      error: dialog.error,
+    };
+  }
+  const lines = splitLines(dialog.content);
+  const selected = lines.slice(dialog.offset, dialog.offset + dialog.limit);
+  return {
+    title: dialog.title,
+    content: selected.join("\n"),
+    offset: dialog.offset,
+    limit: dialog.limit,
+    totalLines: lines.length,
+    nextOffset:
+      dialog.offset + selected.length < lines.length ? dialog.offset + selected.length : undefined,
+    loading: dialog.loading,
+    error: dialog.error,
+  };
+}
+
+function splitLines(content: string): string[] {
+  if (!content) {
+    return [];
+  }
+  const lines = content.split(/\r\n|\r|\n/);
+  if (/(?:\r\n|\r|\n)$/.test(content)) {
+    lines.pop();
+  }
+  return lines;
 }
 
 function errorText(error: unknown): string {

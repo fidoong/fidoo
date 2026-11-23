@@ -52,7 +52,7 @@ export const globTool = defineTool({
     const suffix = truncated ? `\n[Truncated: ${visible.length - 500} more files]` : "";
     return {
       summary: `Found ${visible.length} files`,
-      content: await boundedOutput(context, "glob.txt", `${files.join("\n")}${suffix}`),
+      ...(await boundedOutput(context, "glob.txt", `${files.join("\n")}${suffix}`)),
     };
   },
 });

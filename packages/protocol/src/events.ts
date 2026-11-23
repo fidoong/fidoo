@@ -5,10 +5,13 @@ export const PROTOCOL_VERSION = "v1" as const;
 export const PUBLIC_RUN_EVENT_TYPES = [
   "run.started",
   "run.resumed",
+  "run.steered",
   "message.user",
   "message.assistant",
   "message.assistant.delta",
   "message.reasoning.delta",
+  "context.compacted",
+  "plan.updated",
   "model.usage",
   "tool.proposed",
   "tool.approval_required",

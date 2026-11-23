@@ -9,6 +9,7 @@ import {
   FileEventStore,
   InteractiveApproval,
   LocalWorkspace,
+  loadPermissionPolicy,
 } from "@fidoo/node-runtime";
 import type { PublicRunEvent, RunSnapshot } from "@fidoo/protocol";
 import { Command, InvalidArgumentError } from "commander";
@@ -34,6 +35,7 @@ program
   .option("--thinking <mode>", "DeepSeek thinking: enabled or disabled", parseThinking)
   .option("-y, --yes", "auto-approve medium-risk operations")
   .option("--read-only", "deny all write and execute operations")
+  .option("--policy <path>", "additional trusted permission policy JSON")
   .option("--output <format>", "text, json, or jsonl", parseOutput, "text")
   .option("--max-iterations <number>", "agent iteration budget", "40")
   .showHelpAfterError();
@@ -176,6 +178,28 @@ program
     } catch (error) {
       workspace = { path: options.cwd, valid: false, error: errorMessage(error) };
     }
+    let permission: {
+      valid: boolean;
+      mode?: string;
+      sources?: string[];
+      ruleCount?: number;
+      error?: string;
+    };
+    try {
+      const policy = await loadPermissionPolicy({
+        cwd: options.cwd,
+        dataHome: dataHome(),
+        ...(options.policy ? { policyFile: options.policy } : {}),
+      });
+      permission = {
+        valid: true,
+        mode: options.readOnly ? "read-only" : options.yes ? "auto" : (policy.mode ?? "ask"),
+        sources: policy.sources,
+        ruleCount: policy.rules.length,
+      };
+    } catch (error) {
+      permission = { valid: false, error: errorMessage(error) };
+    }
     process.stdout.write(
       `${JSON.stringify(
         {
@@ -183,6 +207,7 @@ program
           cwd: options.cwd,
           workspace,
           dataHome: dataHome(),
+          permission,
           provider,
           model,
           modelConfigured:
@@ -262,6 +287,7 @@ async function createApiClient(config: RuntimeConfig): Promise<AgentClient> {
   const api = new AgentApi({
     createRunService: runtime.createRunService,
     eventStore: runtime.eventStore,
+    artifacts: runtime.artifacts,
     workspace: runtime.workspace,
   });
   return createAgentClient(new InProcessTransport(api));

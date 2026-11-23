@@ -15,6 +15,8 @@ export type RunServiceOptions = Omit<AgentLoopOptions, "store"> & {
 };
 
 export class RunService {
+  private readonly activeLoops = new Map<string, AgentLoop>();
+
   constructor(private readonly options: RunServiceOptions) {}
 
   async start(
@@ -30,7 +32,8 @@ export class RunService {
     await this.append(events, runId, "message.user", {
       message: { role: "user", source: "user", content: task },
     });
-    return (await AgentLoop.create(runId, this.options)).run(signal);
+    const loop = await AgentLoop.create(runId, this.options);
+    return this.executeLoop(runId, loop, signal);
   }
 
   async resume(runId: string, task: string | undefined, signal: AbortSignal): Promise<RunState> {
@@ -44,7 +47,31 @@ export class RunService {
         message: { role: "user", source: "user", content: task },
       });
     }
-    return (await AgentLoop.create(runId, this.options)).run(signal);
+    const loop = await AgentLoop.create(runId, this.options);
+    return this.executeLoop(runId, loop, signal);
+  }
+
+  async steer(runId: string, task: string): Promise<void> {
+    const loop = this.activeLoops.get(runId);
+    if (!loop) {
+      throw new AgentError("Run is not active; resume it before steering", "configuration");
+    }
+    await loop.steer(task);
+  }
+
+  private async executeLoop(
+    runId: string,
+    loop: AgentLoop,
+    signal: AbortSignal,
+  ): Promise<RunState> {
+    this.activeLoops.set(runId, loop);
+    try {
+      return await loop.run(signal);
+    } finally {
+      if (this.activeLoops.get(runId) === loop) {
+        this.activeLoops.delete(runId);
+      }
+    }
   }
 
   async cancel(runId: string): Promise<RunState> {

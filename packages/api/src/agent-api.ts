@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   ApprovalPort,
+  ArtifactStore,
   EventStore,
   RunService,
   RuntimeObserver,
@@ -10,12 +11,14 @@ import { AgentError, createEvent, errorMessage, replayRun } from "@fidoo/core";
 import type { ApiMethod, PublicRunEvent } from "@fidoo/protocol";
 import {
   approvalRespondParamsSchema,
+  artifactReadParamsSchema,
   isTerminalRunEvent,
   isTransientRunEvent,
   runIdParamsSchema,
   runListParamsSchema,
   runResumeParamsSchema,
   runStartParamsSchema,
+  runSteerParamsSchema,
   runSubscribeParamsSchema,
   workspaceValidateParamsSchema,
 } from "@fidoo/protocol";
@@ -32,6 +35,7 @@ import {
 export interface AgentApiOptions {
   createRunService(observer: RuntimeObserver, approval: ApprovalPort): RunService;
   eventStore: EventStore;
+  artifacts: ArtifactStore;
   workspace: WorkspacePort;
 }
 
@@ -65,6 +69,8 @@ export class AgentApi {
         return this.start(params);
       case "run.resume":
         return this.resume(params);
+      case "run.steer":
+        return this.steer(params);
       case "run.cancel":
         return this.cancel(params);
       case "run.get":
@@ -73,6 +79,8 @@ export class AgentApi {
         return this.list(params);
       case "run.trace":
         return this.trace(params);
+      case "artifact.read":
+        return this.readArtifact(params);
       case "approval.respond":
         return this.respond(params);
       case "run.subscribe":
@@ -247,6 +255,15 @@ export class AgentApi {
     return { ok: true as const };
   }
 
+  private async steer(params: unknown) {
+    const input = runSteerParamsSchema.parse(params);
+    if (!this.active.has(input.runId)) {
+      throw new AgentError("Run is not active; resume it before steering", "configuration");
+    }
+    await this.runService.steer(input.runId, input.task);
+    return { ok: true as const };
+  }
+
   private async cancel(params: unknown) {
     const input = runIdParamsSchema.parse(params);
     const controller = this.active.get(input.runId);
@@ -286,6 +303,11 @@ export class AgentApi {
   private async trace(params: unknown) {
     const input = runIdParamsSchema.parse(params);
     return (await this.options.eventStore.load(input.runId)).map(toPublicRunEvent);
+  }
+
+  private async readArtifact(params: unknown) {
+    const input = artifactReadParamsSchema.parse(params);
+    return this.options.artifacts.read(input.runId, input.artifactId, input.offset, input.limit);
   }
 
   private respond(params: unknown) {

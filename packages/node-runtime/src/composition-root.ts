@@ -2,6 +2,8 @@ import type {
   ApprovalPort,
   ArtifactStore,
   EventStore,
+  PermissionMode,
+  ResolvedPermissionPolicy,
   RunService,
   RuntimeObserver,
   WorkspacePort,
@@ -11,11 +13,13 @@ import {
   loadProjectInstructions,
   PolicyEngine,
   ToolRegistry,
+  updatePlanTool,
   withProjectInstructions,
 } from "@fidoo/core";
 import { RejectApproval } from "./adapters/approval/reject.js";
 import { DeepSeekModel } from "./adapters/models/deepseek.js";
 import { OpenAICompatibleModel } from "./adapters/models/openai-compatible.js";
+import { loadPermissionPolicy } from "./adapters/policy/file-policy.js";
 import { FileArtifactStore } from "./adapters/storage/file-artifact-store.js";
 import { FileEventStore } from "./adapters/storage/file-event-store.js";
 import { LocalWorkspace } from "./adapters/system/local-workspace.js";
@@ -28,6 +32,8 @@ export interface NodeRuntime {
   eventStore: EventStore;
   artifacts: ArtifactStore;
   workspace: WorkspacePort;
+  permission: ResolvedPermissionPolicy;
+  permissionMode: PermissionMode;
 }
 
 export async function createNodeRuntime(
@@ -36,6 +42,12 @@ export async function createNodeRuntime(
   approval?: ApprovalPort,
 ): Promise<NodeRuntime> {
   const instructions = await loadProjectInstructions(config.cwd);
+  const permission = await loadPermissionPolicy(config);
+  const permissionMode: PermissionMode = config.readOnly
+    ? "read-only"
+    : config.autoApprove
+      ? "auto"
+      : (permission.mode ?? "ask");
   const eventStore = new FileEventStore(config.dataHome);
   const artifacts = new FileArtifactStore(config.dataHome);
   const workspace = new LocalWorkspace();
@@ -56,9 +68,9 @@ export async function createNodeRuntime(
       store: eventStore,
       workspace,
       artifacts,
-      tools: new ToolRegistry(createCodingTools()),
+      tools: new ToolRegistry([updatePlanTool, ...createCodingTools()]),
       approval: serviceApproval ?? new RejectApproval(),
-      policy: new PolicyEngine(config.readOnly ? "read-only" : config.autoApprove ? "auto" : "ask"),
+      policy: new PolicyEngine(permissionMode, permission.rules),
       systemPrompt: withProjectInstructions(instructions),
       maxIterations: config.maxIterations,
       ...(serviceObserver ? { observer: serviceObserver } : {}),
@@ -69,6 +81,8 @@ export async function createNodeRuntime(
     eventStore,
     artifacts,
     workspace,
+    permission,
+    permissionMode,
   };
 }
 

@@ -1,5 +1,6 @@
 import type { AgentEvent } from "./events.js";
 import type { Message, ToolCall } from "./messages.js";
+import type { TaskPlan } from "./plan.js";
 
 export type RunStatus = "running" | "completed" | "failed" | "blocked" | "cancelled";
 
@@ -11,6 +12,8 @@ export interface RunState {
   messages: Message[];
   calls: Map<string, ToolCall>;
   results: Map<string, AgentEvent & { type: "tool.result" }>;
+  plan?: TaskPlan;
+  steeringRequests: Map<string, string>;
   changedFiles: Set<string>;
   lastMutationSeq: number;
   lastVerificationSeq: number;
@@ -28,6 +31,7 @@ export function emptyRunState(runId: string): RunState {
     messages: [],
     calls: new Map(),
     results: new Map(),
+    steeringRequests: new Map(),
     changedFiles: new Set(),
     lastMutationSeq: 0,
     lastVerificationSeq: 0,
@@ -51,8 +55,24 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
       delete state.error;
       break;
     case "message.user":
+      if (event.payload.steeringId) {
+        state.steeringRequests.delete(event.payload.steeringId);
+      }
+      state.messages.push(event.payload.message);
+      break;
     case "message.assistant":
       state.messages.push(event.payload.message);
+      break;
+    case "context.compacted": {
+      const recent =
+        event.payload.retainedMessages === 0
+          ? []
+          : state.messages.slice(-event.payload.retainedMessages);
+      state.messages = [event.payload.summary, ...recent];
+      break;
+    }
+    case "plan.updated":
+      state.plan = event.payload.plan;
       break;
     case "tool.proposed":
       state.calls.set(event.payload.call.id, event.payload.call);
@@ -100,6 +120,9 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
     case "run.cancelled":
       state.status = "cancelled";
       state.error = event.payload.reason;
+      break;
+    case "run.steered":
+      state.steeringRequests.set(event.payload.instructionId, event.payload.task);
       break;
     case "model.usage":
     case "tool.approval_required":

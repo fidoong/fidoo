@@ -66,7 +66,7 @@ export const grepTool = defineTool({
     }
     return {
       summary: `Found ${matches.length} matches in ${searchedFiles} searched files`,
-      content: await boundedOutput(context, "grep.txt", matches.join("\n")),
+      ...(await boundedOutput(context, "grep.txt", matches.join("\n"))),
     };
   },
 });

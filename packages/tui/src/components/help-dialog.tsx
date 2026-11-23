@@ -9,6 +9,7 @@ const commands = [
   ["/trace", "Inspect canonical run events"],
   ["/theme", "Choose and save the interface theme"],
   ["/reasoning", "Expand or collapse model reasoning"],
+  ["/artifact <id>", "Read a saved artifact by id"],
   ["/quit", "Close fidoo"],
 ] as const;
 

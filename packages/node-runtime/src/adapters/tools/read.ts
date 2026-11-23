@@ -41,7 +41,7 @@ export const readFileTool = defineTool({
     const content = `File: ${relative}\nRevision: ${revisionOf(source)}\nLines: ${input.offset}-${Math.min(lines.length, input.offset + input.limit - 1)} of ${lines.length}\n\n${selected}`;
     return {
       summary: `Read ${relative}`,
-      content: await boundedOutput(context, `read-${relative}.txt`, content),
+      ...(await boundedOutput(context, `read-${relative}.txt`, content)),
     };
   },
 });

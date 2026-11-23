@@ -166,14 +166,14 @@ interface TuiState {
 
 首版快捷键：
 
-- `Enter`：发送任务。
+- `Enter`：空闲时发送任务；活跃运行时通过 `run.steer` 发送指导，下一模型轮次生效。
 - `Ctrl+J`：插入换行，比依赖终端区分 Shift+Enter 更可靠。
 - `Ctrl+C`：取消当前 run；空闲时第一次提示，再按一次退出。
 - `Esc`：关闭弹窗或命令面板；审批弹窗中等同拒绝。
 - `y / n`：批准或拒绝当前调用。
 - `↑ / ↓`：输入历史；弹窗打开时只用于弹窗选项。
 - `Tab`：补全 slash command。
-- `Ctrl+O`：展开或折叠当前工具输出详情。
+- `Ctrl+O`：打开最近工具输出查看器；短输出本地分页，大输出通过 Artifact ID 按需读取，↑/↓ 或 k/j 翻页，Ctrl+O/Esc 关闭。
 - `Ctrl+K`：空闲时打开命令面板，方向键选择，Enter 执行，Esc 关闭。
 - `Ctrl+R`：展开或折叠当前模型推理；折叠时预览最近 3 行并显示状态、耗时和字符数。
 
@@ -186,6 +186,7 @@ Slash commands：
 /trace               当前事件轨迹
 /theme               主题选择与持久化
 /reasoning           展开或折叠模型推理
+/artifact <id>       按 ID 查看保存的工具输出
 /help                帮助
 /quit                退出
 ```
@@ -209,13 +210,15 @@ TUI 包只负责主题解析与应用；CLI 负责配置文件读写，避免把
 
 ## 8. 渲染与性能
 
-- 已完成消息与工具按 seq 合并到同一个 Ink `Static` 时间线，只追加新内容；活动工具、流式回复和 Ctrl+O 输出详情保持动态。
+- 已完成消息与工具按 seq 合并到同一个 Ink `Static` 时间线，只追加新内容；活动工具、流式回复和 Ctrl+O 输出查看器保持动态。
 - `onTextDelta` 与 `onReasoningDelta` 在 `AgentController` 中按 50ms 分别合批，渲染入口限制 `maxFps: 20`。完整段落和闭合代码块以连续排版追加到 Static，动态区域只保留未完成块，避免终端捕获整篇擦写产生的空白中间帧。
 - `message.reasoning.delta` 是独立临时事件，不写入事件存储、不进入历史 Trace，也不与正式回答 Markdown 混合。Reasoning 面板默认预览最近 3 行并显示状态、耗时和字符数，Ctrl+R 展开最近 24 行；内存最多保留最近 64K 字符。
-- Run plan 由真实运行事件推导：Inspect 随首次工具结果或回答完成，Change 随文件修改工具推进，Verify 随验证事件推进，Report 只在终态完成；未发生的修改和验证标记为 skipped，不伪造模型计划。
+- 非简单任务通过低风险 `update_plan` 工具创建真实 TaskPlan，稳定 step id 跨更新保留，AgentLoop 分配 plan id 和递增 revision，并写入持久 `plan.updated` 事件。计划包含 pending/in_progress/completed/blocked/skipped、当前说明和完成证据，随模型上下文与历史恢复传递。旧会话没有 TaskPlan 时，TUI 才回退到 Inspect/Change/Verify/Report 事件投影。
+- 活跃运行可接收 `run.steer`。AgentLoop 使用同一串行事件写入链持久化 `run.steered`，通过 steeringId 延迟写入对应用户消息，直到 assistant 工具调用与 tool results 闭合；若指导在最终响应期间到达，会强制下一轮模型请求，不能直接完成任务。
+- 上下文超过预算时按完整消息单元裁剪旧历史，assistant 工具调用与对应 tool results 必须一起保留或移除；持久 `context.compacted` 保存摘要、保留数量及估算前后 token，RunState 重放后得到相同上下文。原始任务、真实计划、最近完整轮次和 harness 状态优先保留；固定系统/工具/最新调用链本身超过预算时仍会明确失败。
 - `run.completed.summary` 不再作为纯文本 notice 重复输出；Agent 消息是唯一 Markdown 正文，完成通知只保留简短验证状态。
 - Agent 正文使用 marked token 流式 Markdown 渲染，支持标题、粗体、列表、链接、引用、表格和代码块；代码与 Bash 命令使用独立高亮组件。
-- 工具批次保留最近 2 条完整调用，更早的调用合并为一行汇总；大工具输出默认折叠，当前 Ctrl+O 限长查看最后输出；Artifact 分页读取与独立查看器作为下一步，避免把几万行文本一次性交给 Ink。
+- 工具批次保留最近 2 条完整调用，更早的调用合并为一行汇总；大工具输出默认折叠并保存结构化 Artifact 引用，Ctrl+O 在独立查看器中按页读取，避免把几万行文本一次性交给 Ink。
 - 所有文本按终端宽度换行；80×24 是可用的最低验收尺寸。
 - 非 TTY 不进入 raw mode；TUI 独占输出时禁止其他组件直接写 stdout/stderr。
 - 首版保留系统终端滚动历史，不急着启用 alternate screen；全屏模式作为后续选项。
@@ -228,7 +231,7 @@ TUI 包只负责主题解析与应用；CLI 负责配置文件读写，避免把
 - 已提供独立 `agent-server --stdio` 和 `agent tui`；TTY 默认进入 TUI，非 TTY 保持现有行为。
 - 实现 `AgentController`、事件 reducer、消息流、Composer、状态栏。
 - 实现工具卡片、编辑 diff、审批弹窗、Ctrl+C 取消和 `report_blocked` 展示。
-- 实现输入历史、Ctrl+O 工具输出折叠、`/new`、`/help` 和 `/quit`。
+- 实现输入历史、Ctrl+O 输出查看器、`/new`、`/help` 和 `/quit`。
 - 复用现有工作区预检；启动失败直接显示配置错误，不创建空会话。
 
 验收：真实完成“提交任务 → 审批编辑 → 查看 diff → 测试验证 → completed”，blocked 返回退出码 2 的语义不变。
@@ -239,7 +242,7 @@ TUI 包只负责主题解析与应用；CLI 负责配置文件读写，避免把
 
 视觉重构已完成：`ƒ fidoo` 静态品牌时间线、响应式双栏 Welcome、聚焦输入面板、编辑器式工具轨迹、流式 Markdown、代码/命令高亮、命令建议与 Tab 补全、Ctrl+K 命令面板、主题选择、代码评审 diff 和新版审批/状态栏。
 
-后续继续：Artifact 查看、费用与预算进度、验证清单、完整断线重连和更多终端尺寸验收。Web、桌面和 HTTP 传输暂缓，优先完善 Agent + TUI 的真实使用闭环。
+已完成 Artifact 结构化引用、安全分页读取、独立输出查看器和 `/artifact <id>`。后续继续：费用与预算进度、验证清单、完整断线重连和更多终端尺寸验收。Web、桌面和 HTTP 传输暂缓，优先完善 Agent + TUI 的真实使用闭环。
 
 验收：长会话中可取消并恢复，未决副作用仍进入对账；80 列终端不出现布局失控。
 

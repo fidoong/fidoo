@@ -1,5 +1,11 @@
 import type { ApprovalPort, AssistantMessage, PermissionMode } from "@fidoo/core";
-import { BASE_SYSTEM_PROMPT, PolicyEngine, RunService, ToolRegistry } from "@fidoo/core";
+import {
+  BASE_SYSTEM_PROMPT,
+  PolicyEngine,
+  RunService,
+  ToolRegistry,
+  updatePlanTool,
+} from "@fidoo/core";
 import {
   createCodingTools,
   LocalWorkspace,
@@ -37,7 +43,7 @@ export function testRuntime(
     store,
     workspace: new LocalWorkspace(),
     artifacts,
-    tools: new ToolRegistry(createCodingTools()),
+    tools: new ToolRegistry([updatePlanTool, ...createCodingTools()]),
     approval: options.approval ?? approveAll,
     policy: new PolicyEngine(options.permission ?? "auto"),
     systemPrompt: BASE_SYSTEM_PROMPT,

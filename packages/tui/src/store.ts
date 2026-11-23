@@ -1,5 +1,12 @@
 import type { PublicRunEvent } from "@fidoo/protocol";
-import type { PendingApproval, ToolCard, TuiState, ViewMessage, ViewToolCall } from "./types.js";
+import type {
+  PendingApproval,
+  ToolCard,
+  TuiState,
+  ViewMessage,
+  ViewTaskPlan,
+  ViewToolCall,
+} from "./types.js";
 
 export function initialTuiState(): TuiState {
   return {
@@ -13,6 +20,7 @@ export function initialTuiState(): TuiState {
     reasoningStartedAt: undefined,
     reasoningEndedAt: undefined,
     tools: [],
+    taskPlan: undefined,
     pendingApproval: undefined,
     changedFiles: [],
     verificationStatus: undefined,
@@ -134,6 +142,13 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         verificationStatus: undefined,
         error: undefined,
       };
+    case "context.compacted":
+      return {
+        ...state,
+        notice: `Context compacted · omitted ${Number(event.payload.omittedMessages)} older messages`,
+      };
+    case "run.steered":
+      return { ...state, phase: "running", notice: "Steering recorded · next model turn" };
     case "message.user":
       return appendMessage(
         state,
@@ -167,6 +182,13 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
           outputTokens: state.usage.outputTokens + Number(event.payload.outputTokens ?? 0),
         },
       };
+    case "plan.updated": {
+      const plan = event.payload.plan as ViewTaskPlan | undefined;
+      if (!plan || typeof plan.title !== "string" || !Array.isArray(plan.steps)) {
+        return state;
+      }
+      return { ...state, taskPlan: structuredClone(plan) };
+    }
     case "tool.proposed": {
       const call = toolCall(event.payload.call);
       return {
@@ -181,6 +203,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
             decision: undefined,
             summary: undefined,
             output: undefined,
+            artifacts: undefined,
           },
         ],
       };
@@ -222,6 +245,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         status: "success" | "error";
         summary?: string;
         content: string;
+        artifacts?: ToolCard["artifacts"];
         changedFiles?: string[];
       };
       return {
@@ -232,6 +256,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
           status: result.status,
           summary: result.summary,
           output: result.content,
+          artifacts: result.artifacts,
         }),
         changedFiles: [...new Set([...state.changedFiles, ...(result.changedFiles ?? [])])],
       };
@@ -331,6 +356,7 @@ function updateTool(tools: ToolCard[], callId: string, update: Partial<ToolCard>
       decision: update.decision,
       summary: update.summary,
       output: update.output,
+      artifacts: update.artifacts,
     },
   ];
 }

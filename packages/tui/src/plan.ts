@@ -2,9 +2,11 @@ import { isActivePhase } from "./store.js";
 import type { TuiState } from "./types.js";
 
 export interface PlanStep {
-  id: "inspect" | "change" | "verify" | "report";
+  id: string;
   label: string;
   status: "pending" | "running" | "completed" | "failed" | "skipped";
+  detail?: string;
+  evidence?: string;
 }
 
 export function createPlanSteps(state: TuiState): PlanStep[] {

@@ -99,6 +99,7 @@ apps/agent-server ───────► api ────► core
 workspace.validate   校验并描述工作区，不启动模型
 run.start            创建任务，立即返回 runId
 run.resume           追加用户指令并恢复任务
+run.steer            活跃运行中追加指导，下一模型轮次生效
 run.cancel           请求取消任务
 run.get              查询任务快照
 run.subscribe        订阅 afterSeq 之后的事件
@@ -169,10 +170,12 @@ session.close        关闭客户端订阅，不取消任务
 首版只暴露稳定、客户端真正需要的持久事件：
 
 ```text
-run.started / run.resumed
+run.started / run.resumed / run.steered
 message.user / message.assistant
 tool.proposed / tool.approval_required / tool.started / tool.result
 verification.requested / verification.finished
+plan.updated
+context.compacted
 run.completed / run.blocked / run.failed / run.cancelled
 model.usage
 ```
@@ -235,6 +238,7 @@ WebSocket 不是首版必需；只有明确需要高频双向消息或多人实�
 - Artifact 使用受限 ID 和分页读取，禁止通过 `../` 或绝对路径读取任意文件。
 - 公共 DTO 默认移除原始推理、Provider 凭证、环境变量和敏感绝对路径。
 - API 认证不能替代工具审批；高危命令仍按 PolicyEngine 处理。
+- 本地权限规则的分层配置、匹配语义和项目配置降权保护见 `docs/permissions.md`。
 - 多用户场景使用独立凭证、预算、会话命名空间和存储隔离，单用户 JSONL 不直接充当多租户数据库。
 
 ## 8. 持久化演进

@@ -58,7 +58,7 @@ export const editFileTool = defineTool({
       .join("\n")}`;
     return {
       summary: `Edited ${relative}`,
-      content: await boundedOutput(context, `edit-${relative}.diff`, diff),
+      ...(await boundedOutput(context, `edit-${relative}.diff`, diff)),
       changedFiles: [relative],
     };
   },

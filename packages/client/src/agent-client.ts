@@ -1,15 +1,18 @@
 import type {
   AgentTransport,
   ApprovalRespondParams,
+  ArtifactReadParams,
   RunIdParams,
   RunListParams,
   RunResumeParams,
   RunStartParams,
+  RunSteerParams,
   RunSubscribeParams,
   WorkspaceValidateParams,
 } from "@fidoo/protocol";
 import {
   apiResultSchema,
+  artifactPageSchema,
   publicRunEventSchema,
   runSnapshotSchema,
   runStartResultSchema,
@@ -21,11 +24,13 @@ import { z } from "zod";
 export class AgentClient {
   readonly workspace: WorkspaceClient;
   readonly run: RunClient;
+  readonly artifacts: ArtifactClient;
   readonly approval: ApprovalClient;
 
   constructor(transport: AgentTransport) {
     this.workspace = new WorkspaceClient(transport);
     this.run = new RunClient(transport);
+    this.artifacts = new ArtifactClient(transport);
     this.approval = new ApprovalClient(transport);
   }
 }
@@ -55,6 +60,10 @@ class RunClient {
     return apiResultSchema.parse(await this.transport.call("run.resume", params));
   }
 
+  async steer(params: RunSteerParams) {
+    return apiResultSchema.parse(await this.transport.call("run.steer", params));
+  }
+
   async cancel(params: RunIdParams) {
     return runSnapshotSchema.parse(await this.transport.call("run.cancel", params));
   }
@@ -75,6 +84,14 @@ class RunClient {
     for await (const event of this.transport.subscribe("run.subscribe", params)) {
       yield publicRunEventSchema.parse(event);
     }
+  }
+}
+
+class ArtifactClient {
+  constructor(private readonly transport: AgentTransport) {}
+
+  async read(params: ArtifactReadParams) {
+    return artifactPageSchema.parse(await this.transport.call("artifact.read", params));
   }
 }
 

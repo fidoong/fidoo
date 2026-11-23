@@ -1,4 +1,5 @@
 import type { AssistantMessage, ToolCall, ToolObservation, UserMessage } from "./messages.js";
+import type { TaskPlan } from "./plan.js";
 
 export const EVENT_SCHEMA_VERSION = 1 as const;
 
@@ -15,9 +16,21 @@ interface EventBase<Type extends string, Payload> {
 export type AgentEvent =
   | EventBase<"run.started", { task: string; cwd: string }>
   | EventBase<"run.resumed", { reason: string }>
-  | EventBase<"message.user", { message: UserMessage }>
+  | EventBase<"run.steered", { instructionId: string; task: string }>
+  | EventBase<"message.user", { message: UserMessage; steeringId?: string }>
   | EventBase<"message.assistant", { message: AssistantMessage }>
   | EventBase<"model.usage", { inputTokens: number; outputTokens: number }>
+  | EventBase<
+      "context.compacted",
+      {
+        summary: UserMessage;
+        omittedMessages: number;
+        retainedMessages: number;
+        estimatedBefore: number;
+        estimatedAfter: number;
+      }
+    >
+  | EventBase<"plan.updated", { plan: TaskPlan }>
   | EventBase<"tool.proposed", { call: ToolCall }>
   | EventBase<
       "tool.approval_required",
@@ -59,9 +72,12 @@ export function createEvent<Type extends EventType>(
 export const EVENT_TYPES = [
   "run.started",
   "run.resumed",
+  "run.steered",
   "message.user",
   "message.assistant",
   "model.usage",
+  "context.compacted",
+  "plan.updated",
   "tool.proposed",
   "tool.approval_required",
   "tool.decided",

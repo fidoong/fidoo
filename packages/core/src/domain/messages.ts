@@ -1,3 +1,5 @@
+import type { ArtifactReference } from "../ports/artifacts.js";
+
 export interface ToolCall {
   id: string;
   name: string;
@@ -38,6 +40,7 @@ export interface ToolObservation {
   status: "success" | "error";
   summary?: string;
   content: string;
+  artifacts?: ArtifactReference[];
   changedFiles?: string[];
   verification?: VerificationEvidence;
 }

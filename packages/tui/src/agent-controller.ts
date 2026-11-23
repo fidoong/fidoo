@@ -1,5 +1,10 @@
 import type { AgentClient } from "@fidoo/client";
-import type { ApprovalRespondParams, PublicRunEvent, RunSummary } from "@fidoo/protocol";
+import type {
+  ApprovalRespondParams,
+  ArtifactPage,
+  PublicRunEvent,
+  RunSummary,
+} from "@fidoo/protocol";
 import {
   appendReasoningText,
   appendStreamingText,
@@ -82,6 +87,14 @@ export class AgentController {
     }
   }
 
+  async steer(task: string): Promise<void> {
+    if (!this.state.runId || !isActivePhase(this.state.phase)) {
+      throw new Error("No active run is available for steering");
+    }
+    await this.client.run.steer({ runId: this.state.runId, task });
+    this.update({ ...this.state, notice: "Steering recorded · next model turn" });
+  }
+
   async cancel(): Promise<void> {
     if (!this.state.runId || !isActivePhase(this.state.phase)) {
       return;
@@ -100,6 +113,13 @@ export class AgentController {
     this.clearDelta();
     this.generation += 1;
     this.update(initialTuiState());
+  }
+
+  readArtifact(artifactId: string, offset = 0, limit = 200): Promise<ArtifactPage> {
+    if (!this.state.runId) {
+      throw new Error("Start or restore a run before reading an artifact");
+    }
+    return this.client.artifacts.read({ runId: this.state.runId, artifactId, offset, limit });
   }
 
   listSessions(): Promise<RunSummary[]> {

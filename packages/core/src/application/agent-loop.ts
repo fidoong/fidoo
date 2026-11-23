@@ -4,6 +4,7 @@ import { AgentError, errorMessage } from "../domain/errors.js";
 import type { AgentEvent, EventPayload, EventType } from "../domain/events.js";
 import { createEvent } from "../domain/events.js";
 import type { AssistantMessage, ToolCall, ToolObservation } from "../domain/messages.js";
+import type { TaskPlanUpdate } from "../domain/plan.js";
 import type { RunState } from "../domain/run-state.js";
 import { needsVerification, reduceEvent, replayRun } from "../domain/run-state.js";
 import type { ApprovalPort } from "../ports/approval.js";
@@ -37,6 +38,8 @@ export interface AgentLoopOptions {
 export class AgentLoop {
   private readonly loops = new LoopDetector();
   private sequence = 0;
+  private steeringVersion = 0;
+  private appendChain: Promise<void> = Promise.resolve();
   private state: RunState;
 
   private constructor(
@@ -59,10 +62,16 @@ export class AgentLoop {
     try {
       for (let iteration = 1; iteration <= (this.options.maxIterations ?? 40); iteration += 1) {
         this.throwIfCancelled(signal);
+        await this.flushSteering();
+        const steeringAtStart = this.steeringVersion;
         const assistant = await this.nextAssistant(iteration, signal);
         await this.append("message.assistant", { message: assistant });
         if (!assistant.toolCalls?.length) {
-          if (await this.complete(assistant)) {
+          await this.flushSteering();
+          if (this.steeringVersion !== steeringAtStart) {
+            continue;
+          }
+          if (await this.complete(assistant, steeringAtStart)) {
             return this.state;
           }
           continue;
@@ -73,6 +82,7 @@ export class AgentLoop {
             return this.state;
           }
         }
+        await this.flushSteering();
       }
       await this.append("run.failed", {
         error: "Maximum iterations reached before verified completion",
@@ -93,14 +103,50 @@ export class AgentLoop {
     return this.state;
   }
 
+  private async flushSteering(): Promise<void> {
+    for (const [instructionId, task] of [...this.state.steeringRequests]) {
+      if (!this.state.steeringRequests.has(instructionId)) {
+        continue;
+      }
+      await this.append("message.user", {
+        message: { role: "user", source: "user", content: task },
+        steeringId: instructionId,
+      });
+    }
+  }
+
+  async steer(task: string): Promise<void> {
+    const content = task.trim();
+    if (!content) {
+      throw new AgentError("Steering instruction cannot be empty", "configuration");
+    }
+    const instructionId = randomUUID();
+    const requestVersion = ++this.steeringVersion;
+    await this.enqueueAppend(async () => {
+      if (this.state.status !== "running") {
+        throw new AgentError("Run is not active", "configuration");
+      }
+      await this.appendNow("run.steered", { instructionId, task: content });
+    }).catch((error) => {
+      if (this.steeringVersion === requestVersion) {
+        this.steeringVersion -= 1;
+      }
+      throw error;
+    });
+  }
+
   private async nextAssistant(iteration: number, signal: AbortSignal): Promise<AssistantMessage> {
-    const request = buildModelRequest(this.state, {
+    const built = buildModelRequest(this.state, {
       model: this.options.modelName,
       systemPrompt: this.options.systemPrompt,
       tools: this.options.tools,
       maxTokens: this.options.maxContextTokens ?? 100_000,
       remainingIterations: (this.options.maxIterations ?? 40) - iteration + 1,
     });
+    if (built.compaction) {
+      await this.append("context.compacted", built.compaction);
+    }
+    const request = built.request;
     let completed: AssistantMessage | undefined;
     for await (const event of this.options.model.stream(request, signal)) {
       if (event.type === "text.delta") {
@@ -124,7 +170,10 @@ export class AgentLoop {
     return completed;
   }
 
-  private async complete(assistant: AssistantMessage): Promise<boolean> {
+  private async complete(assistant: AssistantMessage, steeringAtStart: number): Promise<boolean> {
+    if (this.steeringVersion !== steeringAtStart) {
+      return false;
+    }
     if (needsVerification(this.state)) {
       const attempt = this.state.verificationAttempts + 1;
       if (attempt > 2) {
@@ -146,6 +195,9 @@ export class AgentLoop {
         ? "verified command exit code 0"
         : "no code verification required";
     await this.append("verification.finished", { success: true, evidence });
+    if (this.steeringVersion !== steeringAtStart) {
+      return false;
+    }
     await this.append("run.completed", {
       summary: assistant.content || "Task completed",
       verification: this.state.lastVerificationSeq > 0 ? "passed" : "not-required",
@@ -229,10 +281,14 @@ export class AgentLoop {
           status: result.success === false ? "error" : "success",
           summary: result.summary,
           content: result.content,
+          ...(result.artifacts ? { artifacts: result.artifacts } : {}),
           ...(result.changedFiles ? { changedFiles: result.changedFiles } : {}),
           ...(result.verification ? { verification: result.verification } : {}),
         },
       });
+      if (result.planUpdate) {
+        await this.updatePlan(result.planUpdate);
+      }
       if (call.name === "report_blocked") {
         await this.append("run.blocked", { reason: (input as { reason: string }).reason });
       }
@@ -242,6 +298,18 @@ export class AgentLoop {
       }
       await this.recordError(call, errorMessage(error));
     }
+  }
+
+  private async updatePlan(update: TaskPlanUpdate): Promise<void> {
+    const current = this.state.plan;
+    await this.append("plan.updated", {
+      plan: {
+        id: current?.id ?? randomUUID(),
+        title: update.title ?? current?.title ?? "Task plan",
+        revision: (current?.revision ?? 0) + 1,
+        steps: structuredClone(update.steps),
+      },
+    });
   }
 
   private async recordError(call: ToolCall, message: string): Promise<void> {
@@ -255,7 +323,17 @@ export class AgentLoop {
     await this.append("tool.result", { result });
   }
 
-  private async append<Type extends EventType>(
+  private append<Type extends EventType>(type: Type, payload: EventPayload<Type>): Promise<void> {
+    return this.enqueueAppend(() => this.appendNow(type, payload));
+  }
+
+  private enqueueAppend(operation: () => Promise<void>): Promise<void> {
+    const result = this.appendChain.then(operation, operation);
+    this.appendChain = result.catch(() => undefined);
+    return result;
+  }
+
+  private async appendNow<Type extends EventType>(
     type: Type,
     payload: EventPayload<Type>,
   ): Promise<void> {

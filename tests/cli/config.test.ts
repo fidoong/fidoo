@@ -70,6 +70,22 @@ describe("provider configuration", () => {
     expect(dataHome()).toBe(join(homedir(), ".fidoo"));
   });
 
+  it("forwards an explicit permission policy to the runtime and sidecar", () => {
+    vi.stubEnv("OPENAI_API_KEY", "openai-test-key");
+    const config = resolveRuntimeConfig({
+      cwd: ".",
+      provider: "openai",
+      model: "test-model",
+      policy: "./company-policy.json",
+      output: "text",
+      maxIterations: "40",
+    });
+    expect(config.policyFile).toBe("./company-policy.json");
+    expect(serverArguments(config)).toEqual(
+      expect.arrayContaining(["--policy", "./company-policy.json"]),
+    );
+  });
+
   it("rejects DeepSeek thinking options for the generic provider", () => {
     vi.stubEnv("OPENAI_API_KEY", "openai-test-key");
     vi.stubEnv("FIDOO_MODEL", "test-model");

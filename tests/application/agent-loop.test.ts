@@ -105,6 +105,83 @@ describe("AgentLoop", () => {
     expect(await store.list()).toMatchObject([{ status: "blocked" }]);
   });
 
+  it("creates and replans a durable task plan with stable identity and revisions", async () => {
+    const { cwd } = await sourceFile();
+    const { service, store } = testRuntime([
+      assistant("Planning", [
+        call("plan-1", "update_plan", {
+          title: "Fix safely",
+          steps: [
+            { id: "inspect", title: "Inspect the failure", status: "in_progress" },
+            { id: "change", title: "Apply a focused change", status: "pending" },
+          ],
+        }),
+      ]),
+      assistant("Replanning", [
+        call("plan-2", "update_plan", {
+          steps: [
+            {
+              id: "inspect",
+              title: "Inspect the failure",
+              status: "completed",
+              evidence: "Located the failing assertion",
+            },
+            {
+              id: "change",
+              title: "Apply a focused change",
+              status: "in_progress",
+              detail: "The inspection changed the chosen approach",
+            },
+          ],
+        }),
+      ]),
+      assistant("Done"),
+    ]);
+    const state = await service.start("Fix with a plan", cwd, new AbortController().signal);
+    const planEvents = (await store.load(state.runId)).filter(
+      (event) => event.type === "plan.updated",
+    );
+    expect(planEvents).toHaveLength(2);
+    expect(state.plan).toMatchObject({
+      id: state.plan?.id,
+      title: "Fix safely",
+      revision: 2,
+      steps: [
+        { id: "inspect", status: "completed", evidence: "Located the failing assertion" },
+        {
+          id: "change",
+          status: "in_progress",
+          detail: "The inspection changed the chosen approach",
+        },
+      ],
+    });
+    const firstPlan = planEvents[0]?.payload.plan;
+    expect(state.plan?.id).toBe(firstPlan?.id);
+    expect(state.plan?.steps.map((step) => step.id)).toEqual(["inspect", "change"]);
+  });
+
+  it("rejects invalid plans without writing a plan event", async () => {
+    const { cwd } = await sourceFile();
+    const { service, store } = testRuntime([
+      assistant("Invalid plan", [
+        call("plan-invalid", "update_plan", {
+          steps: [
+            { id: "one", title: "First", status: "in_progress" },
+            { id: "two", title: "Second", status: "in_progress" },
+          ],
+        }),
+      ]),
+      assistant("Recovered"),
+    ]);
+    const state = await service.start("Plan", cwd, new AbortController().signal);
+    expect(state.plan).toBeUndefined();
+    const events = await store.load(state.runId);
+    expect(events.some((event) => event.type === "plan.updated")).toBe(false);
+    expect(events.find((event) => event.type === "tool.result")).toMatchObject({
+      payload: { result: { status: "error" } },
+    });
+  });
+
   it("persists provider-neutral model usage", async () => {
     const { cwd } = await sourceFile();
     const { service, store } = testRuntime([assistant("Done")], {

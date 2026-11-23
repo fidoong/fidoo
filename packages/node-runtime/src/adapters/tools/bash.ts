@@ -41,7 +41,7 @@ export const bashTool = defineTool({
     const content = `$ ${command}\nExit code: ${exitCode}\n${status}\n\n${output}`;
     return {
       summary: `${status}: ${command}${succeeded ? "" : ` (exit code ${exitCode})`}`,
-      content: await boundedOutput(context, "command-output.txt", content),
+      ...(await boundedOutput(context, "command-output.txt", content)),
       success: succeeded,
       ...(isVerificationCommand(input.command, input.args)
         ? { verification: { command, exitCode } }

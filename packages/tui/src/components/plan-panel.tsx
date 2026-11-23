@@ -8,6 +8,40 @@ export function PlanPanel({ state }: { state: TuiState }) {
   if (!state.runId) {
     return null;
   }
+  if (state.taskPlan) {
+    const steps = state.taskPlan.steps.map(
+      (step): PlanStep => ({
+        id: step.id,
+        label: step.title,
+        status:
+          step.status === "in_progress"
+            ? "running"
+            : step.status === "blocked"
+              ? "failed"
+              : step.status,
+        ...(step.detail ? { detail: step.detail } : {}),
+        ...(step.evidence ? { evidence: step.evidence } : {}),
+      }),
+    );
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text>
+          <Text bold>{state.taskPlan.title}</Text>
+          <Text dimColor> · plan r{state.taskPlan.revision}</Text>
+        </Text>
+        {steps.slice(0, 10).map((step) => {
+          const annotation = step.status === "completed" ? step.evidence : step.detail;
+          return (
+            <Text key={step.id} wrap="wrap">
+              <StepIcon step={step} /> <Text color={stepColor(step)}>{step.label}</Text>
+              {annotation ? <Text dimColor> · {short(annotation)}</Text> : null}
+            </Text>
+          );
+        })}
+        {steps.length > 10 ? <Text dimColor>… {steps.length - 10} more steps</Text> : null}
+      </Box>
+    );
+  }
   const steps = createPlanSteps(state);
   return (
     <Box marginTop={1}>
@@ -50,4 +84,8 @@ function stepColor(step: PlanStep): string {
     return theme.accent;
   }
   return theme.muted;
+}
+
+function short(value: string): string {
+  return value.length > 160 ? `${value.slice(0, 157)}...` : value;
 }

@@ -20,6 +20,7 @@ program
   .option("--thinking <mode>", "DeepSeek thinking: enabled or disabled", parseThinking)
   .option("-y, --yes", "auto-approve medium-risk operations")
   .option("--read-only", "deny all write and execute operations")
+  .option("--policy <path>", "additional trusted permission policy JSON")
   .option("--max-iterations <number>", "agent iteration budget", "40")
   .configureOutput({
     writeOut: (text) => process.stderr.write(text),
@@ -37,6 +38,7 @@ try {
   const api = new AgentApi({
     createRunService: runtime.createRunService,
     eventStore: runtime.eventStore,
+    artifacts: runtime.artifacts,
     workspace: runtime.workspace,
   });
   const server = new StdioServer(api);

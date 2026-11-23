@@ -12,6 +12,7 @@ export interface ServerOptions {
   thinking?: ThinkingMode;
   yes?: boolean;
   readOnly?: boolean;
+  policy?: string;
   maxIterations: string;
 }
 
@@ -56,6 +57,7 @@ export function resolveServerConfig(options: ServerOptions): NodeRuntimeConfig {
     dataHome: process.env.FIDOO_HOME ?? join(homedir(), ".fidoo"),
     autoApprove: options.yes ?? false,
     readOnly: options.readOnly ?? false,
+    ...(options.policy ? { policyFile: options.policy } : {}),
     maxIterations,
   };
 }

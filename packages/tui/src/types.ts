@@ -1,3 +1,5 @@
+import type { ArtifactReference } from "@fidoo/protocol";
+
 export type TuiPhase =
   | "idle"
   | "starting"
@@ -28,6 +30,7 @@ export interface ToolCard extends ViewToolCall {
   decision: "approved" | "rejected" | undefined;
   summary: string | undefined;
   output: string | undefined;
+  artifacts?: ArtifactReference[] | undefined;
 }
 
 export interface PendingApproval {
@@ -35,6 +38,21 @@ export interface PendingApproval {
   call: ViewToolCall;
   risk: "low" | "medium" | "high";
   reason: string;
+}
+
+export interface ViewTaskPlanStep {
+  id: string;
+  title: string;
+  status: "pending" | "in_progress" | "completed" | "blocked" | "skipped";
+  detail?: string;
+  evidence?: string;
+}
+
+export interface ViewTaskPlan {
+  id: string;
+  title: string;
+  revision: number;
+  steps: ViewTaskPlanStep[];
 }
 
 export interface TuiState {
@@ -48,6 +66,7 @@ export interface TuiState {
   reasoningStartedAt: number | undefined;
   reasoningEndedAt: number | undefined;
   tools: ToolCard[];
+  taskPlan: ViewTaskPlan | undefined;
   pendingApproval: PendingApproval | undefined;
   changedFiles: string[];
   verificationStatus: "running" | "passed" | "failed" | "not-required" | undefined;

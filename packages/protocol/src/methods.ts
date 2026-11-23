@@ -23,6 +23,12 @@ export const runResumeParamsSchema = z.object({
 });
 export type RunResumeParams = z.infer<typeof runResumeParamsSchema>;
 
+export const runSteerParamsSchema = z.object({
+  runId: z.string().min(1),
+  task: z.string().min(1),
+});
+export type RunSteerParams = z.infer<typeof runSteerParamsSchema>;
+
 export const runIdParamsSchema = z.object({ runId: z.string().min(1) });
 export type RunIdParams = z.infer<typeof runIdParamsSchema>;
 
@@ -69,3 +75,27 @@ export const approvalRespondParamsSchema = z.object({
 export type ApprovalRespondParams = z.infer<typeof approvalRespondParamsSchema>;
 
 export const apiResultSchema = z.object({ ok: z.literal(true) });
+
+export const artifactReferenceSchema = z.object({
+  id: z.string().regex(/^[a-f0-9]{64}$/),
+  name: z.string().min(1),
+  bytes: z.number().int().nonnegative(),
+});
+export type ArtifactReference = z.infer<typeof artifactReferenceSchema>;
+
+export const artifactReadParamsSchema = z.object({
+  runId: z.string().min(1),
+  artifactId: z.string().regex(/^[a-f0-9]{8,64}$/),
+  offset: z.number().int().nonnegative().default(0),
+  limit: z.number().int().min(1).max(1000).default(200),
+});
+export type ArtifactReadParams = z.input<typeof artifactReadParamsSchema>;
+
+export const artifactPageSchema = artifactReferenceSchema.extend({
+  offset: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  totalLines: z.number().int().nonnegative(),
+  content: z.string(),
+  nextOffset: z.number().int().nonnegative().optional(),
+});
+export type ArtifactPage = z.infer<typeof artifactPageSchema>;

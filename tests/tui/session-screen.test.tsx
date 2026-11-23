@@ -49,6 +49,11 @@ describe("TUI keyboard flow", () => {
     expect(transport.approvals).toEqual([
       { runId: "run-1", callId: "edit", decision: "approved", reason: "Approved in TUI" },
     ]);
+    stdin.write("\u000f");
+    await vi.waitFor(() => expect(lastFrame()).toContain("edit_file output"));
+    expect(lastFrame()).toContain("+new");
+    stdin.write("\u001b");
+    await vi.waitFor(() => expect(lastFrame()).not.toContain("edit_file output"));
   });
 
   it("cancels the active run with Ctrl+C", async () => {

@@ -141,6 +141,25 @@ describe("stdio Agent API", () => {
     expect(new Set(replayed.map((event) => event.eventId)).size).toBe(replayed.length);
   });
 
+  it("reads artifact pages through the same stdio connection", async () => {
+    const { client, artifacts } = stdioApi([assistant("Unused")]);
+    const saved = await artifacts.save("run-artifact", "output.txt", "one\ntwo\nthree");
+    const page = await client.artifacts.read({
+      runId: "run-artifact",
+      artifactId: saved.id.slice(0, 8),
+      offset: 1,
+      limit: 1,
+    });
+    expect(page).toMatchObject({
+      id: saved.id,
+      name: "output.txt",
+      content: "two",
+      offset: 1,
+      totalLines: 3,
+      nextOffset: 2,
+    });
+  });
+
   it("handles fragmented NDJSON and reports protocol errors on stdout only", async () => {
     const cwd = await workspace();
     const { input, output, close } = rawServer();

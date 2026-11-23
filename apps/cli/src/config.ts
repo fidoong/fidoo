@@ -13,6 +13,7 @@ export interface GlobalOptions {
   thinking?: ThinkingMode;
   yes?: boolean;
   readOnly?: boolean;
+  policy?: string;
   output: OutputFormat;
   maxIterations: string;
 }
@@ -66,6 +67,7 @@ export function resolveRuntimeConfig(options: GlobalOptions): RuntimeConfig {
     dataHome: dataHome(),
     autoApprove: options.yes ?? false,
     readOnly: options.readOnly ?? false,
+    ...(options.policy ? { policyFile: options.policy } : {}),
     maxIterations,
     output: options.output,
   };
@@ -82,6 +84,7 @@ export function serverArguments(config: RuntimeConfig): string[] {
     "--max-iterations",
     String(config.maxIterations),
     ...(config.baseURL ? ["--base-url", config.baseURL] : []),
+    ...(config.policyFile ? ["--policy", config.policyFile] : []),
     ...(config.provider === "deepseek" ? ["--thinking", config.thinking] : []),
     ...(config.autoApprove ? ["--yes"] : []),
     ...(config.readOnly ? ["--read-only"] : []),

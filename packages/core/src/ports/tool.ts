@@ -1,6 +1,7 @@
 import type { ZodType } from "zod";
 import type { VerificationEvidence } from "../domain/messages.js";
-import type { ArtifactStore } from "./artifacts.js";
+import type { TaskPlanUpdate } from "../domain/plan.js";
+import type { ArtifactReference, ArtifactStore } from "./artifacts.js";
 
 export type ToolEffect = "read" | "write" | "execute" | "network";
 export type ToolRisk = "low" | "medium" | "high";
@@ -15,6 +16,8 @@ export interface ToolContext {
 export interface ToolResult {
   summary: string;
   content: string;
+  artifacts?: ArtifactReference[];
+  planUpdate?: TaskPlanUpdate;
   success?: boolean;
   changedFiles?: string[];
   verification?: VerificationEvidence;

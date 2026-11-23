@@ -6,9 +6,11 @@ import { Spinner } from "./spinner.js";
 
 export function Composer({
   enabled,
+  busy = false,
   onSubmit,
 }: {
   enabled: boolean;
+  busy?: boolean;
   onSubmit(value: string): void;
 }) {
   const [value, setValue] = useState("");
@@ -78,8 +80,10 @@ export function Composer({
       paddingX={1}
     >
       <Box justifyContent="space-between" marginBottom={1}>
-        <Text dimColor>{enabled ? "Message fidoo" : "Fidoo is working"}</Text>
-        <Text dimColor>{enabled ? "Enter ↵" : "Ctrl+C cancel"}</Text>
+        <Text dimColor>
+          {enabled ? (busy ? "Steer current run" : "Message fidoo") : "Fidoo is working"}
+        </Text>
+        <Text dimColor>{enabled ? (busy ? "Enter ↵ steer" : "Enter ↵") : "Ctrl+C cancel"}</Text>
       </Box>
       {enabled ? (
         <Text wrap="wrap">
@@ -113,7 +117,11 @@ export function Composer({
       ) : null}
       {enabled && !value ? (
         <Box marginTop={1}>
-          <Text dimColor>Ctrl+J newline · Esc clear · Ctrl+K palette · / commands</Text>
+          <Text dimColor>
+            {busy
+              ? "Enter sends guidance · Ctrl+C cancel · /help"
+              : "Ctrl+J newline · Esc clear · Ctrl+K palette · / commands"}
+          </Text>
         </Box>
       ) : null}
     </Box>

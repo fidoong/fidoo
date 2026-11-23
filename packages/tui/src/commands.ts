@@ -10,10 +10,11 @@ export const commandDefinitions: CommandDefinition[] = [
   { name: "/trace", description: "Inspect canonical run events" },
   { name: "/theme", description: "Choose and save the interface theme" },
   { name: "/reasoning", description: "Expand or collapse model reasoning" },
+  { name: "/artifact ", description: "Read a saved artifact by id" },
   { name: "/help", description: "Show keyboard and command help" },
   { name: "/quit", description: "Close fidoo" },
 ];
 
 export const paletteDefinitions = commandDefinitions.filter(
-  (command) => command.name !== "/resume ",
+  (command) => command.name !== "/resume " && command.name !== "/artifact ",
 );

@@ -102,6 +102,41 @@ describe("in-process Agent API", () => {
     expect(new Set(replayed.map((event) => event.eventId)).size).toBe(replayed.length);
   });
 
+  it("emits structured artifact references and reads the saved output by id", async () => {
+    const cwd = await workspace();
+    const source = Array.from(
+      { length: 400 },
+      (_, index) => `${String(index + 1).padStart(4)} ${"x".repeat(80)}`,
+    ).join("\n");
+    await writeFile(join(cwd, "large.txt"), source);
+    const { client } = testApi([
+      assistant("Reading", [call("read", "read_file", { path: "large.txt" })]),
+      assistant("Done"),
+    ]);
+    const { runId } = await client.run.start({ task: "Read the large file", cwd });
+    const events = await collect(client.run.subscribe({ runId, afterSeq: 0 }));
+    const resultEvent = events.find((event) => event.type === "tool.result");
+    const result = (resultEvent?.payload.result ?? {}) as {
+      content?: string;
+      artifacts?: Array<{ id: string; name: string; bytes: number }>;
+    };
+    const artifact = result.artifacts?.[0];
+    expect(artifact).toBeDefined();
+    expect(result.content).toContain(`artifact ${artifact?.id}`);
+    expect(result.content).not.toContain("saved to");
+    if (!artifact) throw new Error("Missing artifact reference");
+    const page = await client.artifacts.read({
+      runId,
+      artifactId: artifact.id.slice(0, 12),
+      offset: 0,
+      limit: 50,
+    });
+    expect(page).toMatchObject({ id: artifact.id, offset: 0, limit: 50, nextOffset: 50 });
+    expect(page.totalLines).toBeGreaterThan(400);
+    expect(page.content).toContain("File: large.txt");
+    expect(page).not.toHaveProperty("path");
+  });
+
   it("validates missing workspaces before starting a model run", async () => {
     const cwd = await workspace();
     const { client, model, store } = testApi([assistant("Should not run")]);

@@ -12,5 +12,6 @@ export interface NodeRuntimeConfig {
   dataHome: string;
   autoApprove: boolean;
   readOnly: boolean;
+  policyFile?: string;
   maxIterations: number;
 }
