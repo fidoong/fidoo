@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "jsx": "react-jsx",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -25,6 +25,8 @@
       "@fidoo/client": ["./packages/client/src/index.ts"],
       "@fidoo/client/stdio": ["./packages/client/src/stdio.ts"],
       "@fidoo/agent-server": ["./apps/agent-server/src/stdio-server.ts"],
+      "@fidoo/observability": ["./packages/observability/src/index.ts"],
+      "@fidoo/observability-app": ["./apps/observability/src/server/index.ts"],
       "@fidoo/tui": ["./packages/tui/src/index.tsx"]
     }
   },

@@ -16,6 +16,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:once": "tsx apps/cli/src/index.ts",
     "dev:debug": "node scripts/dev.mjs --debug",
+    "dev:observability": "pnpm --filter @fidoo/observability-app dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

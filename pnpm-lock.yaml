@@ -185,6 +185,43 @@ importers:
         specifier: ^15.1.0
         version: 15.1.0
 
+  apps/observability:
+    dependencies:
+      '@fidoo/api':
+        specifier: workspace:^
+        version: link:../../packages/api
+      '@fidoo/core':
+        specifier: workspace:^
+        version: link:../../packages/core
+      '@fidoo/node-runtime':
+        specifier: workspace:^
+        version: link:../../packages/node-runtime
+      '@fidoo/observability':
+        specifier: workspace:^
+        version: link:../../packages/observability
+      '@fidoo/protocol':
+        specifier: workspace:^
+        version: link:../../packages/protocol
+      react:
+        specifier: ^19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: ^19.3.1
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      '@vitejs/plugin-react':
+        specifier: ^6.0.0
+        version: 6.3.0(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
+      vite:
+        specifier: ^8.0.0
+        version: 8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)
+
   packages/api:
     dependencies:
       '@fidoo/core':
@@ -232,6 +269,12 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+
+  packages/observability:
+    dependencies:
+      '@fidoo/protocol':
+        specifier: workspace:^
+        version: link:../protocol
 
   packages/protocol:
     dependencies:
@@ -805,8 +848,29 @@ packages:
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
+  '@types/react-dom@19.3.0':
+    resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
+    peerDependencies:
+      '@types/react': ^19.3.0
+
   '@types/react@19.3.0':
     resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
+
+  '@vitejs/plugin-react@6.3.0':
+    resolution: {integrity: sha512-H9E955aVvD2F4zNHCw4eIZbIfF6xKldlh7MNu+hSU7xwQzh65lI/N+CJWqmfhi0PEjDXIt/H7T7J/4wU63KJiw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    peerDependencies:
+      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0 || ^0.3.0
+      babel-plugin-react-compiler: ^1.0.0
+      oxc-transform-react: '>=0.152.0 <0.157.0'
+      vite: ^8.0.0
+    peerDependenciesMeta:
+      '@rolldown/plugin-babel':
+        optional: true
+      babel-plugin-react-compiler:
+        optional: true
+      oxc-transform-react:
+        optional: true
 
   '@vitest/mocker@5.1.1':
     resolution: {integrity: sha512-b2OgTB4+3ImWIVafXKazJXwLKwQxUNnix6b3xUvUTMh7RyXlrtzoxfZr8aEz9zkHOMAS4K5lu3TvFWoiVeVTQg==}
@@ -1294,6 +1358,11 @@ packages:
   quick-lru@7.3.0:
     resolution: {integrity: sha512-k9lSsjl36EJdK7I06v7APZCbyGT2vMTsYSRX1Q2nbYmnkBqgUhRkAuzH08Ciotteu/PLJmIF2+tti7o3C/ts2g==}
     engines: {node: '>=18'}
+
+  react-dom@19.3.1:
+    resolution: {integrity: sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ==}
+    peerDependencies:
+      react: ^19.3.1
 
   react-reconciler@0.34.0:
     resolution: {integrity: sha512-eVibvB1fc9j5Qf1KRkiM3GzRPBdjg2P6G6QV2f3P6Eb3OGMxRBhdg2rrUwjbV5JrQaJj8nOa8uajmmJA5tJWjQ==}
@@ -1905,9 +1974,18 @@ snapshots:
     dependencies:
       undici-types: 7.24.6
 
+  '@types/react-dom@19.3.0(@types/react@19.3.0)':
+    dependencies:
+      '@types/react': 19.3.0
+
   '@types/react@19.3.0':
     dependencies:
       csstype: 3.2.4
+
+  '@vitejs/plugin-react@6.3.0(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))':
+    dependencies:
+      '@rolldown/pluginutils': 1.1.1
+      vite: 8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)
 
   '@vitest/mocker@5.1.1(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))':
     dependencies:
@@ -2297,6 +2375,11 @@ snapshots:
   queue-microtask@1.2.3: {}
 
   quick-lru@7.3.0: {}
+
+  react-dom@19.3.1(react@19.3.1):
+    dependencies:
+      react: 19.3.1
+      scheduler: 0.28.0
 
   react-reconciler@0.34.0(react@19.3.1):
     dependencies:

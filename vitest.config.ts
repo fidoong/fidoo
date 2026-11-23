@@ -14,6 +14,8 @@ export default defineConfig({
       "@fidoo/protocol": source("./packages/protocol/src/index.ts"),
       "@fidoo/api": source("./packages/api/src/index.ts"),
       "@fidoo/client": source("./packages/client/src/index.ts"),
+      "@fidoo/observability": source("./packages/observability/src/index.ts"),
+      "@fidoo/observability-app": source("./apps/observability/src/server/index.ts"),
     },
   },
   test: {
