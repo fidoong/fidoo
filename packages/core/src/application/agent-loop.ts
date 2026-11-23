@@ -146,27 +146,49 @@ export class AgentLoop {
     if (built.compaction) {
       await this.append("context.compacted", built.compaction);
     }
-    const request = built.request;
+    await this.append("model.started", { iteration, model: this.options.modelName });
+    const startedAt = Date.now();
     let completed: AssistantMessage | undefined;
-    for await (const event of this.options.model.stream(request, signal)) {
-      if (event.type === "text.delta") {
-        this.options.observer?.onTextDelta?.(event.text, this.runId);
-      } else if (event.type === "reasoning.delta") {
-        this.options.observer?.onReasoningDelta?.(event.text, this.runId);
-      } else if (event.type === "usage") {
-        if (event.inputTokens !== undefined || event.outputTokens !== undefined) {
-          await this.append("model.usage", {
-            inputTokens: event.inputTokens ?? 0,
-            outputTokens: event.outputTokens ?? 0,
-          });
+    try {
+      for await (const event of this.options.model.stream(built.request, signal)) {
+        if (event.type === "text.delta") {
+          this.options.observer?.onTextDelta?.(event.text, this.runId);
+        } else if (event.type === "reasoning.delta") {
+          this.options.observer?.onReasoningDelta?.(event.text, this.runId);
+        } else if (event.type === "usage") {
+          if (event.inputTokens !== undefined || event.outputTokens !== undefined) {
+            await this.append("model.usage", {
+              inputTokens: event.inputTokens ?? 0,
+              outputTokens: event.outputTokens ?? 0,
+            });
+          }
+        } else if (event.type === "message.completed") {
+          completed = event.message;
         }
-      } else if (event.type === "message.completed") {
-        completed = event.message;
       }
+      if (!completed) {
+        throw new AgentError("Provider stream ended without a complete message", "provider", true);
+      }
+      if (!completed.content.trim() && !completed.toolCalls?.length) {
+        throw new AgentError("Provider returned an empty assistant message", "provider", true);
+      }
+    } catch (error) {
+      await this.append("model.failed", {
+        iteration,
+        model: this.options.modelName,
+        durationMs: Date.now() - startedAt,
+        error: errorMessage(error),
+        recoverable: error instanceof AgentError ? error.recoverable : false,
+      });
+      throw error;
     }
-    if (!completed) {
-      throw new AgentError("Provider stream ended without a complete message", "provider", true);
-    }
+    await this.append("model.completed", {
+      iteration,
+      model: this.options.modelName,
+      durationMs: Date.now() - startedAt,
+      contentLength: completed.content.length,
+      toolCalls: completed.toolCalls?.length ?? 0,
+    });
     return completed;
   }
 

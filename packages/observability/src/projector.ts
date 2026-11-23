@@ -26,6 +26,17 @@ interface ToolBuilder {
   result?: unknown;
 }
 
+interface ModelBuilder {
+  eventId: string;
+  iteration: number;
+  model: string;
+  startedAt: string;
+  endedAt?: string;
+  status: TraceSpanStatus;
+  eventIds: string[];
+  detail?: unknown;
+}
+
 interface VerificationBuilder {
   attempt: number;
   startedAt: string;
@@ -40,6 +51,7 @@ export function projectRun(runId: string, input: PublicRunEvent[]): RunProjectio
   const started = events.find((event) => event.type === "run.started");
   const terminal = events.findLast((event) => isTerminalRunEvent(event));
   const tools = new Map<string, ToolBuilder>();
+  const models: ModelBuilder[] = [];
   const verifications: VerificationBuilder[] = [];
   const messages: ObservedMessage[] = [];
   const timeline: TimelineItem[] = [];
@@ -80,7 +92,32 @@ export function projectRun(runId: string, input: PublicRunEvent[]): RunProjectio
       }
     }
 
-    if (event.type === "model.usage") {
+    if (event.type === "model.started") {
+      models.push({
+        eventId: event.eventId,
+        iteration: number(payload.iteration),
+        model: text(payload.model) ?? "model",
+        startedAt: event.timestamp,
+        status: "running",
+        eventIds: [event.eventId],
+        detail: redact(payload),
+      });
+    } else if (event.type === "model.completed" || event.type === "model.failed") {
+      const iteration = number(payload.iteration);
+      const model = models.findLast((item) => !item.endedAt && item.iteration === iteration) ?? {
+        eventId: event.eventId,
+        iteration,
+        model: text(payload.model) ?? "model",
+        startedAt: event.timestamp,
+        status: "running" as const,
+        eventIds: [],
+      };
+      if (!models.includes(model)) models.push(model);
+      model.status = event.type === "model.failed" ? "error" : "success";
+      model.endedAt = event.timestamp;
+      model.eventIds.push(event.eventId);
+      model.detail = redact(payload);
+    } else if (event.type === "model.usage") {
       inputTokens += number(payload.inputTokens);
       outputTokens += number(payload.outputTokens);
     } else if (event.type === "context.compacted") {
@@ -188,13 +225,20 @@ export function projectRun(runId: string, input: PublicRunEvent[]): RunProjectio
       .filter((event) => event === started || event === terminal || event.type === "run.resumed")
       .map((event) => event.eventId),
   };
+  const modelSpans = models.map((model) => modelSpan(runId, model, status));
   const toolSpans = [...tools.values()].map((tool) => toolSpan(runId, tool, status));
   const verificationSpans = verifications.map((verification) =>
     verificationSpan(runId, verification, status),
   );
+  const operationSpans = [...modelSpans, ...toolSpans, ...verificationSpans].toSorted(
+    (left, right) => left.startedAt.localeCompare(right.startedAt),
+  );
   const metrics: RunMetrics = {
     inputTokens,
     outputTokens,
+    modelCalls: modelSpans.filter((span) => span.status === "success").length,
+    failedModelCalls: modelSpans.filter((span) => span.status === "error").length,
+    modelDurationMs: modelSpans.reduce((total, span) => total + (span.durationMs ?? 0), 0),
     toolCalls: tools.size,
     failedTools: toolSpans.filter((span) => span.status === "error").length,
     approvalWaitMs: toolSpans.reduce((total, span) => total + (span.approvalWaitMs ?? 0), 0),
@@ -215,7 +259,7 @@ export function projectRun(runId: string, input: PublicRunEvent[]): RunProjectio
     lastSeq: events.at(-1)?.seq ?? 0,
     eventCount: events.length,
     metrics,
-    spans: [rootSpan, ...toolSpans, ...verificationSpans],
+    spans: [rootSpan, ...operationSpans],
     messages,
     timeline,
     artifacts: [...artifacts.values()],
@@ -268,6 +312,22 @@ function toolSpan(runId: string, tool: ToolBuilder, runStatus: RunStatus): Trace
   };
 }
 
+function modelSpan(runId: string, model: ModelBuilder, runStatus: RunStatus): TraceSpan {
+  return {
+    spanId: `${runId}:model:${model.eventId}`,
+    parentSpanId: `${runId}:run`,
+    kind: "model",
+    name: model.model,
+    status: model.endedAt || runStatus === "running" ? model.status : "incomplete",
+    startedAt: model.startedAt,
+    ...(model.endedAt
+      ? { endedAt: model.endedAt, durationMs: elapsed(model.startedAt, model.endedAt) }
+      : {}),
+    eventIds: model.eventIds,
+    detail: model.detail,
+  };
+}
+
 function verificationSpan(
   runId: string,
   verification: VerificationBuilder,
@@ -313,6 +373,9 @@ function eventLabel(event: PublicRunEvent): string {
     "run.steered": "Run steered",
     "message.user": "User message",
     "message.assistant": "Assistant message",
+    "model.started": "Model call started",
+    "model.completed": "Model call completed",
+    "model.failed": "Model call failed",
     "model.usage": "Model usage",
     "context.compacted": "Context compacted",
     "plan.updated": "Plan updated",

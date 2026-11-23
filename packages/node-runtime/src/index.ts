@@ -1,6 +1,8 @@
 export * from "./adapters/approval/interactive.js";
 export * from "./adapters/approval/reject.js";
+export * from "./adapters/models/anthropic.js";
 export * from "./adapters/models/deepseek.js";
+export * from "./adapters/models/gemini.js";
 export * from "./adapters/models/openai-compatible.js";
 export * from "./adapters/policy/file-policy.js";
 export * from "./adapters/storage/file-artifact-store.js";
@@ -21,3 +23,6 @@ export * from "./adapters/tools/report-blocked.js";
 export * from "./adapters/tools/write.js";
 export * from "./composition-root.js";
 export * from "./config.js";
+export * from "./model-config.js";
+export * from "./model-discovery.js";
+export * from "./settings.js";

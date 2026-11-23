@@ -47,6 +47,20 @@ describe("TUI themed components", () => {
     view.unmount();
   });
 
+  it("keeps provider, model and current context visible in the status area", () => {
+    const state = {
+      ...initialTuiState(),
+      contextTokens: 2500,
+    };
+    const view = render(
+      <StatusBar state={state} provider="kimi-code" model="k3.1-pro" contextLimit={100_000} />,
+    );
+    expect(view.lastFrame()).toContain("kimi-code");
+    expect(view.lastFrame()).toContain("k3.1-pro");
+    expect(view.lastFrame()).toContain("context 2.5k / 100.0k · 3%");
+    view.unmount();
+  });
+
   it("renders compact usage and file metrics", () => {
     const state = {
       ...initialTuiState(),

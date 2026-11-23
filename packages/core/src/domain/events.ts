@@ -19,6 +19,27 @@ export type AgentEvent =
   | EventBase<"run.steered", { instructionId: string; task: string }>
   | EventBase<"message.user", { message: UserMessage; steeringId?: string }>
   | EventBase<"message.assistant", { message: AssistantMessage }>
+  | EventBase<"model.started", { iteration: number; model: string }>
+  | EventBase<
+      "model.completed",
+      {
+        iteration: number;
+        model: string;
+        durationMs: number;
+        contentLength: number;
+        toolCalls: number;
+      }
+    >
+  | EventBase<
+      "model.failed",
+      {
+        iteration: number;
+        model: string;
+        durationMs: number;
+        error: string;
+        recoverable: boolean;
+      }
+    >
   | EventBase<"model.usage", { inputTokens: number; outputTokens: number }>
   | EventBase<
       "context.compacted",
@@ -75,6 +96,9 @@ export const EVENT_TYPES = [
   "run.steered",
   "message.user",
   "message.assistant",
+  "model.started",
+  "model.completed",
+  "model.failed",
   "model.usage",
   "context.compacted",
   "plan.updated",

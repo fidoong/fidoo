@@ -42,6 +42,9 @@ export const ToolCallCard = memo(function ToolCallCard({
         {tool.name === "bash" ? <CommandHighlight command={args} /> : <Text dimColor>{args}</Text>}
         <Text dimColor> · </Text>
         <Text color={status.color}>{status.label}</Text>
+        {tool.durationMs !== undefined ? (
+          <Text dimColor> · {formatDuration(tool.durationMs)}</Text>
+        ) : null}
       </Text>
       {tool.decision === "rejected" ? <Text color={theme.error}> rejected</Text> : null}
       {showSummary && tool.summary ? (
@@ -141,6 +144,11 @@ function formatToolBreakdown(tools: ToolCard[]): string {
     counts.set(tool.name, (counts.get(tool.name) ?? 0) + 1);
   }
   return [...counts].map(([name, count]) => (count === 1 ? name : `${name} ×${count}`)).join(" · ");
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1000) return `${milliseconds}ms`;
+  return `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)}s`;
 }
 
 function limit(source: string, lines: number): string {

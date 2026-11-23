@@ -7,17 +7,13 @@ import { Spinner } from "./spinner.js";
 export function ReasoningPanel({ state, expanded }: { state: TuiState; expanded: boolean }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    if (!state.reasoningActive) {
-      return;
-    }
+    if (!state.reasoningActive) return;
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [state.reasoningActive]);
 
-  if (!state.reasoningText) {
-    return null;
-  }
+  if (!state.reasoningText) return null;
   const endedAt = state.reasoningActive ? now : (state.reasoningEndedAt ?? now);
   const elapsed = Math.max(0, endedAt - (state.reasoningStartedAt ?? endedAt));
   const lines = state.reasoningText.slice(-6000).split("\n").slice(-24);
@@ -28,41 +24,39 @@ export function ReasoningPanel({ state, expanded }: { state: TuiState; expanded:
   const visibleLines = expanded ? lines : previewLines;
   const occurrences = new Map<string, number>();
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor={state.reasoningActive ? theme.accent : theme.border}
-      paddingX={1}
-      marginTop={1}
-    >
-      <Box justifyContent="space-between">
-        <Text>
-          {state.reasoningActive ? <Spinner active color={theme.accent} /> : <Text>✓</Text>}{" "}
-          <Text bold>Reasoning</Text>
-          <Text dimColor> · {formatDuration(elapsed)}</Text>
-        </Text>
+    <Box flexDirection="column" marginY={1}>
+      <Text wrap="wrap">
+        <Text color={theme.border}>╭─ </Text>
+        {state.reasoningActive ? (
+          <Spinner active color={theme.accent} />
+        ) : (
+          <Text color={theme.success}>✓</Text>
+        )}{" "}
+        <Text bold>Reasoning</Text>
         <Text dimColor>
-          {formatCount(state.reasoningText.length)} chars · Ctrl+R{" "}
-          {expanded ? "collapse" : "expand"}
+          {" "}
+          · {formatDuration(elapsed)} · {formatCount(state.reasoningText.length)} chars
         </Text>
-      </Box>
-      {visibleLines.length > 0 ? (
-        <Box flexDirection="column" marginTop={1}>
-          {visibleLines.map((line) => {
-            const occurrence = (occurrences.get(line) ?? 0) + 1;
-            occurrences.set(line, occurrence);
-            const limit = expanded ? 300 : 160;
-            return (
-              <Text key={`${line.slice(0, 64)}-${occurrence}`} dimColor wrap="wrap">
-                {line.length > limit ? `${line.slice(0, limit - 3)}...` : line || " "}
-              </Text>
-            );
-          })}
-          {expanded ? (
-            <Text dimColor>Latest {lines.length} lines · transient, not saved to history</Text>
-          ) : null}
-        </Box>
-      ) : null}
+      </Text>
+      {visibleLines.map((line) => {
+        const occurrence = (occurrences.get(line) ?? 0) + 1;
+        occurrences.set(line, occurrence);
+        const limit = expanded ? 300 : 160;
+        return (
+          <Text key={`${line.slice(0, 64)}-${occurrence}`} wrap="wrap">
+            <Text color={theme.border}>│ </Text>
+            <Text dimColor>
+              {line.length > limit ? `${line.slice(0, limit - 3)}...` : line || " "}
+            </Text>
+          </Text>
+        );
+      })}
+      <Text>
+        <Text color={theme.border}>╰─ </Text>
+        <Text dimColor>
+          {expanded ? `Latest ${lines.length} lines` : "Ctrl+R expand"} · transient, not saved
+        </Text>
+      </Text>
     </Box>
   );
 }

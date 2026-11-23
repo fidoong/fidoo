@@ -30,7 +30,13 @@ export function TraceView({
               onClick={() => onSelect(span.spanId)}
             >
               <span className={`span-icon span-${span.status}`}>
-                {span.kind === "verification" ? "V" : span.kind === "run" ? "ƒ" : "T"}
+                {span.kind === "verification"
+                  ? "V"
+                  : span.kind === "run"
+                    ? "ƒ"
+                    : span.kind === "model"
+                      ? "M"
+                      : "T"}
               </span>
               <span className="span-name">
                 <strong>{span.name}</strong>
@@ -62,7 +68,13 @@ export function TraceView({
           <div className="inspector-content">
             <div className="inspector-title">
               <span className={`span-icon span-${selectedSpan.status}`}>
-                {selectedSpan.kind === "run" ? "ƒ" : selectedSpan.kind === "tool" ? "T" : "V"}
+                {selectedSpan.kind === "run"
+                  ? "ƒ"
+                  : selectedSpan.kind === "tool"
+                    ? "T"
+                    : selectedSpan.kind === "model"
+                      ? "M"
+                      : "V"}
               </span>
               <div>
                 <h3>{selectedSpan.name}</h3>

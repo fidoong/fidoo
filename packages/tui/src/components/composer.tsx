@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import { commandDefinitions } from "../commands.js";
+import { commandDefinitions, commandLabel } from "../commands.js";
 import { theme } from "../theme.js";
 import { Spinner } from "./spinner.js";
 
@@ -18,7 +18,7 @@ export function Composer({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const suggestions = value.startsWith("/")
-    ? commandDefinitions.filter((command) => command.name.startsWith(value)).slice(0, 5)
+    ? commandDefinitions.filter((command) => command.name.startsWith(value))
     : [];
 
   useInput(
@@ -60,7 +60,8 @@ export function Composer({
           setValue(history[index] ?? "");
         }
       } else if (key.tab && suggestions.length > 0) {
-        setValue(suggestions[suggestionIndex]?.name ?? suggestions[0]?.name ?? value);
+        const command = suggestions[suggestionIndex] ?? suggestions[0];
+        setValue(command ? `${command.name}${command.usage ? " " : ""}` : value);
         setSuggestionIndex(0);
       } else if (!key.ctrl && !key.meta && !key.escape && input) {
         const pasted = input.replace(/\r\n?/g, "\n");
@@ -100,14 +101,14 @@ export function Composer({
       )}
       {enabled && suggestions.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>Commands · Tab to complete</Text>
+          <Text dimColor>{suggestions.length} commands · ↑/↓ select · Tab complete</Text>
           {suggestions.map((command, index) => {
             const selected = index === suggestionIndex;
             return (
               <Text key={command.name}>
                 <Text color={selected ? theme.accent : theme.muted}>{selected ? "› " : "  "}</Text>
                 <Text bold={selected} color={selected ? theme.accent : theme.brand}>
-                  {command.name}
+                  {commandLabel(command)}
                 </Text>
                 <Text dimColor> {command.description}</Text>
               </Text>
@@ -120,7 +121,7 @@ export function Composer({
           <Text dimColor>
             {busy
               ? "Enter sends guidance · Ctrl+C cancel · /help"
-              : "Ctrl+J newline · Esc clear · Ctrl+K palette · / commands"}
+              : "Enter send · Ctrl+J newline · ↑ history · / commands · Ctrl+K palette"}
           </Text>
         </Box>
       ) : null}

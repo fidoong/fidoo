@@ -34,6 +34,7 @@ export class OpenAICompatibleModel implements ModelPort {
       ...(options.baseURL ? { baseURL: options.baseURL } : {}),
       maxRetries: 0,
       timeout: this.timeoutMs,
+      defaultHeaders: { "User-Agent": "Fidoo/0.1.0" },
     });
   }
 

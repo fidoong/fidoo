@@ -2,6 +2,7 @@ import type {
   ApprovalPort,
   ArtifactStore,
   EventStore,
+  ModelPort,
   PermissionMode,
   ResolvedPermissionPolicy,
   RunService,
@@ -16,9 +17,13 @@ import {
   updatePlanTool,
   withProjectInstructions,
 } from "@fidoo/core";
+import { providerDefinition } from "@fidoo/protocol";
 import { RejectApproval } from "./adapters/approval/reject.js";
+import { AnthropicModel } from "./adapters/models/anthropic.js";
 import { DeepSeekModel } from "./adapters/models/deepseek.js";
+import { GeminiModel } from "./adapters/models/gemini.js";
 import { OpenAICompatibleModel } from "./adapters/models/openai-compatible.js";
+import { UnavailableModel } from "./adapters/models/unavailable.js";
 import { loadPermissionPolicy } from "./adapters/policy/file-policy.js";
 import { FileArtifactStore } from "./adapters/storage/file-artifact-store.js";
 import { FileEventStore } from "./adapters/storage/file-event-store.js";
@@ -53,17 +58,7 @@ export async function createNodeRuntime(
   const workspace = new LocalWorkspace();
   const createService = (serviceObserver?: RuntimeObserver, serviceApproval?: ApprovalPort) =>
     new CoreRunService({
-      model:
-        config.provider === "deepseek"
-          ? new DeepSeekModel({
-              apiKey: config.apiKey,
-              thinking: config.thinking,
-              ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-            })
-          : new OpenAICompatibleModel({
-              apiKey: config.apiKey,
-              ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-            }),
+      model: createModel(config),
       modelName: config.model,
       store: eventStore,
       workspace,
@@ -73,6 +68,7 @@ export async function createNodeRuntime(
       policy: new PolicyEngine(permissionMode, permission.rules),
       systemPrompt: withProjectInstructions(instructions),
       maxIterations: config.maxIterations,
+      maxContextTokens: config.maxContextTokens ?? 100_000,
       ...(serviceObserver ? { observer: serviceObserver } : {}),
     });
   return {
@@ -84,6 +80,36 @@ export async function createNodeRuntime(
     permission,
     permissionMode,
   };
+}
+
+function createModel(config: NodeRuntimeConfig): ModelPort {
+  const definition = providerDefinition(config.provider);
+  if (!config.model || (definition.apiKeyRequired && !config.apiKey)) {
+    return new UnavailableModel();
+  }
+  if (definition.protocol === "anthropic") {
+    return new AnthropicModel({
+      apiKey: config.apiKey,
+      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    });
+  }
+  if (definition.protocol === "gemini") {
+    return new GeminiModel({
+      apiKey: config.apiKey,
+      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    });
+  }
+  if (config.provider === "deepseek") {
+    return new DeepSeekModel({
+      apiKey: config.apiKey,
+      thinking: config.thinking,
+      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    });
+  }
+  return new OpenAICompatibleModel({
+    apiKey: config.apiKey || "not-required",
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
 }
 
 export async function createRunService(

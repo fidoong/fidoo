@@ -1,8 +1,14 @@
-import type { ArtifactPage, PublicRunEvent, RunSummary } from "@fidoo/protocol";
+import type {
+  ArtifactPage,
+  ProviderSettings,
+  PublicRunEvent,
+  RunSummary,
+  SettingsUpdateParams,
+} from "@fidoo/protocol";
 import { Box, Text, useApp, useInput } from "ink";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { AgentController } from "./agent-controller.js";
-import { paletteDefinitions } from "./commands.js";
+import { commandDefinitions, paletteDefinitions } from "./commands.js";
 import { ApprovalDialog } from "./components/approval-dialog.js";
 import { Welcome } from "./components/brand.js";
 import { CommandDialog } from "./components/command-dialog.js";
@@ -11,9 +17,10 @@ import { HelpDialog } from "./components/help-dialog.js";
 import { MessageList } from "./components/message-list.js";
 import { OutputDialog } from "./components/output-dialog.js";
 import { PlanPanel } from "./components/plan-panel.js";
-import { ReasoningPanel } from "./components/reasoning-panel.js";
 import { SessionsDialog } from "./components/sessions-dialog.js";
+import { SettingsDialog } from "./components/settings-dialog.js";
 import { StatusBar } from "./components/status-bar.js";
+import { StatusDialog } from "./components/status-dialog.js";
 import { ThemeDialog } from "./components/theme-dialog.js";
 import { TraceDialog } from "./components/trace-dialog.js";
 import { isActivePhase } from "./store.js";
@@ -52,6 +59,8 @@ type DialogState =
   | { type: "commands"; selected: number }
   | { type: "theme"; selected: number }
   | { type: "help" }
+  | { type: "status" }
+  | { type: "settings"; settings: ProviderSettings }
   | OutputDialogState;
 
 export function TuiApp({
@@ -66,8 +75,10 @@ export function TuiApp({
   const { exit } = useApp();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
+  const [planExpanded, setPlanExpanded] = useState(false);
   const [exitArmed, setExitArmed] = useState(false);
   const [commandNotice, setCommandNotice] = useState<string>();
+  const [connectionSettings, setConnectionSettings] = useState<ProviderSettings>();
   const [dialog, setDialog] = useState<DialogState>();
   const [activeTheme, setActiveTheme] = useState<ThemePreference>(() => {
     const preference = options.theme ?? DEFAULT_THEME;
@@ -85,6 +96,40 @@ export function TuiApp({
     },
     [],
   );
+
+  useEffect(() => {
+    let mounted = true;
+    void controller
+      .getSettings()
+      .then((settings) => {
+        if (!mounted) return;
+        setConnectionSettings(settings);
+        if (!settings.configured) {
+          setDialog((current) => current ?? { type: "settings", settings });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [controller]);
+
+  const showSettings = async () => {
+    try {
+      const settings = connectionSettings ?? (await controller.getSettings());
+      setConnectionSettings(settings);
+      setDialog({ type: "settings", settings });
+    } catch (error) {
+      setCommandNotice(errorText(error));
+    }
+  };
+
+  const saveSettings = async (input: SettingsUpdateParams) => {
+    const settings = await controller.updateSettings(input);
+    setConnectionSettings(settings);
+    setDialog(undefined);
+    setCommandNotice(`Model ready: ${settings.provider} / ${settings.model}`);
+  };
 
   const showSessions = async () => {
     try {
@@ -225,16 +270,22 @@ export function TuiApp({
     setReasoningExpanded((current) => !current);
   };
 
+  const togglePlan = () => {
+    if (!state.taskPlan) {
+      setCommandNotice("No explicit task plan has been recorded for this run.");
+      return;
+    }
+    setCommandNotice(undefined);
+    setPlanExpanded((current) => !current);
+  };
+
   const submit = (value: string) => {
     setCommandNotice(undefined);
     const active = isActivePhase(state.phase);
-    const allowedDuringRun =
-      value === "/help" ||
-      value === "/trace" ||
-      value === "/theme" ||
-      value === "/reasoning" ||
-      value.startsWith("/artifact ");
-    if (active && value.startsWith("/") && !allowedDuringRun) {
+    const command = commandDefinitions.find(
+      (item) => value === item.name || value.startsWith(`${item.name} `),
+    );
+    if (active && value.startsWith("/") && !command?.duringRun) {
       setCommandNotice("Finish or cancel the active run before using this command.");
       return;
     }
@@ -248,8 +299,22 @@ export function TuiApp({
       void showTrace();
     } else if (value === "/theme") {
       showTheme();
+    } else if (value === "/setup" || value === "/settings") {
+      void showSettings();
     } else if (value === "/reasoning") {
       toggleReasoning();
+    } else if (value === "/plan") {
+      togglePlan();
+    } else if (value === "/output") {
+      showOutput();
+    } else if (value === "/status") {
+      setDialog({ type: "status" });
+    } else if (value === "/cancel") {
+      if (active) {
+        void controller.cancel();
+      } else {
+        setCommandNotice("No active run to cancel.");
+      }
     } else if (value.startsWith("/artifact ")) {
       void showArtifact(value.slice("/artifact ".length).trim());
     } else if (value === "/artifact") {
@@ -322,6 +387,10 @@ export function TuiApp({
       toggleReasoning();
       return;
     }
+    if (key.ctrl && input === "p") {
+      togglePlan();
+      return;
+    }
     if (state.pendingApproval) {
       if (input === "y") {
         void controller.respond("approved");
@@ -349,11 +418,12 @@ export function TuiApp({
         messages={state.messages}
         streamingText={state.streamingText}
         tools={state.tools}
-        provider={options.provider}
-        model={options.model}
+        reasoningState={state}
+        reasoningExpanded={reasoningExpanded}
+        provider={connectionSettings?.provider ?? options.provider}
+        model={connectionSettings?.model ?? options.model}
       />
-      {!dialog ? <ReasoningPanel state={state} expanded={reasoningExpanded} /> : null}
-      {!dialog ? <PlanPanel state={state} /> : null}
+      {!dialog ? <PlanPanel state={state} expanded={planExpanded} /> : null}
       {dialog?.type === "sessions" ? (
         <SessionsDialog sessions={dialog.sessions} selected={dialog.selected} />
       ) : dialog?.type === "trace" ? (
@@ -364,6 +434,20 @@ export function TuiApp({
         <ThemeDialog selected={dialog.selected} current={activeTheme.preset} />
       ) : dialog?.type === "help" ? (
         <HelpDialog />
+      ) : dialog?.type === "status" ? (
+        <StatusDialog
+          state={state}
+          provider={connectionSettings?.provider ?? options.provider}
+          model={connectionSettings?.model ?? options.model}
+          cwd={options.cwd}
+          contextLimit={connectionSettings?.contextLimit ?? 100_000}
+        />
+      ) : dialog?.type === "settings" ? (
+        <SettingsDialog
+          initial={dialog.settings}
+          onSave={saveSettings}
+          onDiscover={(params) => controller.listModels(params)}
+        />
       ) : dialog?.type === "output" ? (
         <OutputDialog {...outputView(dialog)} />
       ) : null}
@@ -383,7 +467,12 @@ export function TuiApp({
           <Composer enabled busy={isActivePhase(state.phase)} onSubmit={submit} />
         )}
       </Box>
-      <StatusBar state={state} />
+      <StatusBar
+        state={state}
+        provider={connectionSettings?.provider ?? options.provider}
+        model={connectionSettings?.model ?? options.model}
+        contextLimit={connectionSettings?.contextLimit ?? 100_000}
+      />
     </Box>
   );
 }

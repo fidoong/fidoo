@@ -30,6 +30,8 @@ export interface ToolCard extends ViewToolCall {
   decision: "approved" | "rejected" | undefined;
   summary: string | undefined;
   output: string | undefined;
+  startedAt?: number;
+  durationMs?: number;
   artifacts?: ArtifactReference[] | undefined;
 }
 
@@ -61,16 +63,20 @@ export interface TuiState {
   messages: ViewMessage[];
   streamingText: string;
   streamingBlocksStarted: boolean;
+  responseActive: boolean;
   reasoningText: string;
   reasoningActive: boolean;
   reasoningStartedAt: number | undefined;
   reasoningEndedAt: number | undefined;
+  reasoningMessageId: string | undefined;
   tools: ToolCard[];
   taskPlan: ViewTaskPlan | undefined;
   pendingApproval: PendingApproval | undefined;
   changedFiles: string[];
   verificationStatus: "running" | "passed" | "failed" | "not-required" | undefined;
   usage: { inputTokens: number; outputTokens: number };
+  contextTokens: number;
+  modelActivity: { active: boolean; calls: number; durationMs: number; failures: number };
   lastSeq: number;
   notice: string | undefined;
   error: string | undefined;

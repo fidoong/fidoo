@@ -9,6 +9,9 @@ export const API_METHODS = [
   "run.list",
   "run.trace",
   "artifact.read",
+  "settings.get",
+  "settings.update",
+  "settings.models",
   "approval.respond",
 ] as const;
 

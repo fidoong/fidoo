@@ -4,11 +4,22 @@ import { theme } from "../theme.js";
 import type { TuiState } from "../types.js";
 import { Spinner } from "./spinner.js";
 
-export function PlanPanel({ state }: { state: TuiState }) {
+export function PlanPanel({ state, expanded = false }: { state: TuiState; expanded?: boolean }) {
   if (!state.runId) {
     return null;
   }
   if (state.taskPlan) {
+    if (state.phase !== "running" && state.phase !== "starting" && !expanded) {
+      const completed = state.taskPlan.steps.filter((step) => step.status === "completed").length;
+      return (
+        <Box marginTop={1}>
+          <Text dimColor>
+            ✓ {state.taskPlan.title} · {completed}/{state.taskPlan.steps.length} steps · /plan
+            expand
+          </Text>
+        </Box>
+      );
+    }
     const steps = state.taskPlan.steps.map(
       (step): PlanStep => ({
         id: step.id,

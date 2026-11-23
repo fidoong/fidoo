@@ -15,16 +15,20 @@ export function initialTuiState(): TuiState {
     messages: [],
     streamingText: "",
     streamingBlocksStarted: false,
+    responseActive: false,
     reasoningText: "",
     reasoningActive: false,
     reasoningStartedAt: undefined,
     reasoningEndedAt: undefined,
+    reasoningMessageId: undefined,
     tools: [],
     taskPlan: undefined,
     pendingApproval: undefined,
     changedFiles: [],
     verificationStatus: undefined,
     usage: { inputTokens: 0, outputTokens: 0 },
+    contextTokens: 0,
+    modelActivity: { active: false, calls: 0, durationMs: 0, failures: 0 },
     lastSeq: 0,
     notice: undefined,
     error: undefined,
@@ -41,10 +45,12 @@ export function markStarting(state: TuiState): TuiState {
     phase: "starting",
     streamingText: "",
     streamingBlocksStarted: false,
+    responseActive: false,
     reasoningText: "",
     reasoningActive: false,
     reasoningStartedAt: undefined,
     reasoningEndedAt: undefined,
+    reasoningMessageId: undefined,
     verificationStatus: undefined,
     notice: undefined,
     error: undefined,
@@ -64,7 +70,9 @@ export function appendReasoningText(state: TuiState, text: string): TuiState {
   return {
     ...state,
     reasoningText: combined.length > 64_000 ? `…${combined.slice(-64_000)}` : combined,
+    responseActive: true,
     reasoningActive: true,
+    reasoningMessageId: undefined,
     reasoningStartedAt: state.reasoningStartedAt ?? now,
     reasoningEndedAt: undefined,
   };
@@ -74,7 +82,7 @@ export function appendStreamingText(state: TuiState, text: string): TuiState {
   const source = state.streamingText + text;
   const { complete, rest } = splitStreamingMarkdown(source);
   if (!complete) {
-    return { ...state, streamingText: rest };
+    return { ...state, streamingText: rest, responseActive: true };
   }
   const message: ViewMessage = {
     id: `streaming-${state.runId ?? "new"}-${state.messages.length}-${state.lastSeq}`,
@@ -88,6 +96,7 @@ export function appendStreamingText(state: TuiState, text: string): TuiState {
     messages: [...state.messages, message],
     streamingText: rest,
     streamingBlocksStarted: true,
+    responseActive: true,
   };
 }
 
@@ -161,22 +170,58 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
       const content = state.streamingBlocksStarted
         ? state.streamingText
         : messageContent(event.payload.message) || state.streamingText;
-      return finishReasoning({
-        ...appendMessage(
-          state,
-          event.eventId,
-          event.seq,
-          "assistant",
-          content,
-          state.streamingBlocksStarted,
-        ),
-        streamingText: "",
-        streamingBlocksStarted: false,
-      });
+      return finishReasoning(
+        {
+          ...appendMessage(
+            state,
+            event.eventId,
+            event.seq,
+            "assistant",
+            content,
+            state.streamingBlocksStarted,
+          ),
+          streamingText: "",
+          streamingBlocksStarted: false,
+        },
+        event.eventId,
+      );
     }
+    case "model.started":
+      return {
+        ...state,
+        responseActive: true,
+        reasoningText: "",
+        reasoningActive: false,
+        reasoningStartedAt: undefined,
+        reasoningEndedAt: undefined,
+        reasoningMessageId: undefined,
+        modelActivity: { ...state.modelActivity, active: true },
+      };
+    case "model.completed":
+      return {
+        ...state,
+        modelActivity: {
+          active: false,
+          calls: state.modelActivity.calls + 1,
+          durationMs: state.modelActivity.durationMs + Number(event.payload.durationMs ?? 0),
+          failures: state.modelActivity.failures,
+        },
+      };
+    case "model.failed":
+      return {
+        ...state,
+        responseActive: false,
+        modelActivity: {
+          ...state.modelActivity,
+          active: false,
+          durationMs: state.modelActivity.durationMs + Number(event.payload.durationMs ?? 0),
+          failures: state.modelActivity.failures + 1,
+        },
+      };
     case "model.usage":
       return {
         ...state,
+        contextTokens: Number(event.payload.inputTokens ?? state.contextTokens),
         usage: {
           inputTokens: state.usage.inputTokens + Number(event.payload.inputTokens ?? 0),
           outputTokens: state.usage.outputTokens + Number(event.payload.outputTokens ?? 0),
@@ -236,7 +281,10 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
       return {
         ...state,
         phase: "running",
-        tools: updateTool(state.tools, String(event.payload.callId), { status: "running" }),
+        tools: updateTool(state.tools, String(event.payload.callId), {
+          status: "running",
+          startedAt: Date.parse(event.timestamp),
+        }),
       };
     case "tool.result": {
       const result = event.payload.result as {
@@ -248,6 +296,10 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         artifacts?: ToolCard["artifacts"];
         changedFiles?: string[];
       };
+      const startedAt = state.tools.find((tool) => tool.id === result.callId)?.startedAt;
+      const durationMs = startedAt
+        ? Math.max(0, Date.parse(event.timestamp) - startedAt)
+        : undefined;
       return {
         ...state,
         tools: updateTool(state.tools, result.callId, {
@@ -256,6 +308,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
           status: result.status,
           summary: result.summary,
           output: result.content,
+          ...(durationMs !== undefined ? { durationMs } : {}),
           artifacts: result.artifacts,
         }),
         changedFiles: [...new Set([...state.changedFiles, ...(result.changedFiles ?? [])])],
@@ -311,11 +364,13 @@ function terminal(
   });
 }
 
-function finishReasoning(state: TuiState): TuiState {
+function finishReasoning(state: TuiState, messageId?: string): TuiState {
   return {
     ...state,
+    responseActive: false,
     reasoningActive: false,
     reasoningEndedAt: state.reasoningStartedAt ? (state.reasoningEndedAt ?? Date.now()) : undefined,
+    reasoningMessageId: messageId ?? state.reasoningMessageId,
   };
 }
 

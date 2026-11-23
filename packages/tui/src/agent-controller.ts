@@ -2,8 +2,10 @@ import type { AgentClient } from "@fidoo/client";
 import type {
   ApprovalRespondParams,
   ArtifactPage,
+  ProviderModelsParams,
   PublicRunEvent,
   RunSummary,
+  SettingsUpdateParams,
 } from "@fidoo/protocol";
 import {
   appendReasoningText,
@@ -124,6 +126,18 @@ export class AgentController {
 
   listSessions(): Promise<RunSummary[]> {
     return this.client.run.list({ limit: 50 });
+  }
+
+  getSettings() {
+    return this.client.settings.get();
+  }
+
+  updateSettings(params: SettingsUpdateParams) {
+    return this.client.settings.update(params);
+  }
+
+  listModels(params: ProviderModelsParams) {
+    return this.client.settings.listModels(params);
   }
 
   async trace(): Promise<PublicRunEvent[]> {

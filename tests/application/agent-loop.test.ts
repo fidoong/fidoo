@@ -194,6 +194,34 @@ describe("AgentLoop", () => {
     });
   });
 
+  it("records model lifecycle events before the assistant message", async () => {
+    const { cwd } = await sourceFile();
+    const { service, store } = testRuntime([assistant("Done")]);
+    const state = await service.start("Measure model", cwd, new AbortController().signal);
+    const events = await store.load(state.runId);
+    const started = events.findIndex((event) => event.type === "model.started");
+    const completed = events.findIndex((event) => event.type === "model.completed");
+    const assistantMessage = events.findIndex((event) => event.type === "message.assistant");
+    expect(started).toBeGreaterThan(0);
+    expect(completed).toBeGreaterThan(started);
+    expect(assistantMessage).toBeGreaterThan(completed);
+    expect(events[completed]).toMatchObject({
+      type: "model.completed",
+      payload: { iteration: 1, model: "fake-model", contentLength: 4, toolCalls: 0 },
+    });
+  });
+
+  it("fails explicitly when the provider returns an empty assistant message", async () => {
+    const { cwd } = await sourceFile();
+    const { service, store } = testRuntime([assistant("")]);
+    const state = await service.start("Empty response", cwd, new AbortController().signal);
+    const events = await store.load(state.runId);
+    expect(state.status).toBe("failed");
+    expect(state.error).toContain("empty assistant message");
+    expect(events.some((event) => event.type === "model.failed")).toBe(true);
+    expect(events.some((event) => event.type === "run.completed")).toBe(false);
+  });
+
   it("marks interrupted calls for reconciliation instead of replaying them", async () => {
     const { cwd, source } = await sourceFile();
     const { service, store } = testRuntime([assistant("Recovered without replay")]);

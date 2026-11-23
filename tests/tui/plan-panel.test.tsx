@@ -29,7 +29,11 @@ describe("Task plan panel", () => {
         ],
       },
     };
-    const view = render(<PlanPanel state={state} />);
+    const collapsed = render(<PlanPanel state={state} />);
+    expect(collapsed.lastFrame()).toContain("1/3 steps · /plan expand");
+    expect(collapsed.lastFrame()).not.toContain("Found the incorrect currency conversion");
+    collapsed.unmount();
+    const view = render(<PlanPanel state={state} expanded />);
     expect(view.lastFrame()).toContain("Repair the billing flow · plan r3");
     expect(view.lastFrame()).toContain("Found the incorrect currency conversion");
     expect(view.lastFrame()).toContain("Keeping the public API unchanged");

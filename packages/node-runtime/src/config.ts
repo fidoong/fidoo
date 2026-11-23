@@ -1,6 +1,7 @@
+import type { ProviderKind } from "@fidoo/protocol";
 import type { ThinkingMode } from "./adapters/models/deepseek.js";
 
-export type ProviderKind = "openai" | "deepseek";
+export type { ProviderKind } from "@fidoo/protocol";
 
 export interface NodeRuntimeConfig {
   cwd: string;
@@ -14,4 +15,5 @@ export interface NodeRuntimeConfig {
   readOnly: boolean;
   policyFile?: string;
   maxIterations: number;
+  maxContextTokens?: number;
 }

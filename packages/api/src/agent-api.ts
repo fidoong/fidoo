@@ -8,7 +8,13 @@ import type {
   WorkspacePort,
 } from "@fidoo/core";
 import { AgentError, createEvent, errorMessage, replayRun } from "@fidoo/core";
-import type { ApiMethod, PublicRunEvent } from "@fidoo/protocol";
+import type {
+  ApiMethod,
+  ProviderModelsParams,
+  ProviderSettings,
+  PublicRunEvent,
+  SettingsUpdateParams,
+} from "@fidoo/protocol";
 import {
   approvalRespondParamsSchema,
   artifactReadParamsSchema,
@@ -32,33 +38,42 @@ import {
   toReasoningDelta,
 } from "./event-mapper.js";
 
+export interface AgentSettingsPort {
+  getSettings(): ProviderSettings;
+  updateSettings(params: SettingsUpdateParams): Promise<{
+    settings: ProviderSettings;
+    createRunService(observer: RuntimeObserver, approval: ApprovalPort): RunService;
+  }>;
+  listModels(params: ProviderModelsParams): Promise<{ models: string[]; unavailable?: boolean }>;
+}
+
 export interface AgentApiOptions {
   createRunService(observer: RuntimeObserver, approval: ApprovalPort): RunService;
   eventStore: EventStore;
   artifacts: ArtifactStore;
   workspace: WorkspacePort;
+  settings?: AgentSettingsPort;
 }
 
 export class AgentApi {
   private readonly hub = new EventHub();
   private readonly approval = new ApprovalBroker();
-  private readonly runService: RunService;
+  private runService: RunService;
+  private readonly observer: RuntimeObserver;
   private readonly active = new Map<string, AbortController>();
   private readonly executions = new Map<string, Promise<unknown>>();
 
   constructor(private readonly options: AgentApiOptions) {
-    this.runService = options.createRunService(
-      {
-        onEvent: (event) => this.hub.publish(toPublicRunEvent(event)),
-        onTextDelta: (text, runId) => {
-          this.hub.publishTransient(toAssistantDelta(runId, this.hub.sequence(runId), text));
-        },
-        onReasoningDelta: (text, runId) => {
-          this.hub.publishTransient(toReasoningDelta(runId, this.hub.sequence(runId), text));
-        },
+    this.observer = {
+      onEvent: (event) => this.hub.publish(toPublicRunEvent(event)),
+      onTextDelta: (text, runId) => {
+        this.hub.publishTransient(toAssistantDelta(runId, this.hub.sequence(runId), text));
       },
-      this.approval,
-    );
+      onReasoningDelta: (text, runId) => {
+        this.hub.publishTransient(toReasoningDelta(runId, this.hub.sequence(runId), text));
+      },
+    };
+    this.runService = options.createRunService(this.observer, this.approval);
   }
 
   async call(method: ApiMethod, params: unknown): Promise<unknown> {
@@ -81,6 +96,12 @@ export class AgentApi {
         return this.trace(params);
       case "artifact.read":
         return this.readArtifact(params);
+      case "settings.get":
+        return this.getSettings();
+      case "settings.update":
+        return this.updateSettings(params);
+      case "settings.models":
+        return this.listModels(params);
       case "approval.respond":
         return this.respond(params);
       case "run.subscribe":
@@ -178,6 +199,7 @@ export class AgentApi {
   }
 
   private async start(params: unknown) {
+    this.assertConfigured();
     const input = runStartParamsSchema.parse(params);
     await this.options.workspace.assertDirectory(input.cwd);
     const runId = randomUUID();
@@ -239,6 +261,7 @@ export class AgentApi {
   }
 
   private async resume(params: unknown) {
+    this.assertConfigured();
     const input = runResumeParamsSchema.parse(params);
     if (this.active.has(input.runId)) {
       throw new AgentError(`Run is already active: ${input.runId}`, "configuration");
@@ -313,5 +336,37 @@ export class AgentApi {
   private respond(params: unknown) {
     this.approval.respond(approvalRespondParamsSchema.parse(params));
     return { ok: true as const };
+  }
+
+  private getSettings() {
+    if (!this.options.settings) {
+      throw new AgentError("Runtime settings are not available", "configuration");
+    }
+    return this.options.settings.getSettings();
+  }
+
+  private async updateSettings(params: unknown) {
+    if (!this.options.settings) {
+      throw new AgentError("Runtime settings are not available", "configuration");
+    }
+    if (this.active.size > 0) {
+      throw new AgentError("Finish or cancel active runs before changing models", "configuration");
+    }
+    const result = await this.options.settings.updateSettings(params as SettingsUpdateParams);
+    this.runService = result.createRunService(this.observer, this.approval);
+    return result.settings;
+  }
+
+  private listModels(params: unknown) {
+    if (!this.options.settings) {
+      throw new AgentError("Runtime settings are not available", "configuration");
+    }
+    return this.options.settings.listModels(params as ProviderModelsParams);
+  }
+
+  private assertConfigured(): void {
+    if (this.options.settings && !this.options.settings.getSettings().configured) {
+      throw new AgentError("No model is configured. Run /setup in the TUI.", "configuration");
+    }
   }
 }

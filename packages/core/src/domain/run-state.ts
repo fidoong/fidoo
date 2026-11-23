@@ -124,6 +124,9 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
     case "run.steered":
       state.steeringRequests.set(event.payload.instructionId, event.payload.task);
       break;
+    case "model.started":
+    case "model.completed":
+    case "model.failed":
     case "model.usage":
     case "tool.approval_required":
     case "tool.decided":

@@ -17,7 +17,7 @@ describe("TUI session history", () => {
     const transport = new HistoryTransport();
     const view = renderHistory(transport);
     view.stdin.write("/se");
-    await vi.waitFor(() => expect(view.lastFrame()).toContain("Commands"));
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Tab complete"));
     expect(view.lastFrame()).toContain("Browse and restore saved runs");
     view.stdin.write("\t");
     await vi.waitFor(() => expect(view.lastFrame()).toContain("/sessions"));

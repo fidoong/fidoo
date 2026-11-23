@@ -10,6 +10,9 @@ afterEach(() => {
 
 describe("provider configuration", () => {
   it("uses DeepSeek defaults and its dedicated credentials", () => {
+    vi.stubEnv("FIDOO_API_KEY", undefined);
+    vi.stubEnv("FIDOO_MODEL", undefined);
+    vi.stubEnv("FIDOO_BASE_URL", undefined);
     vi.stubEnv("DEEPSEEK_API_KEY", "deepseek-test-key");
     vi.stubEnv("DEEPSEEK_BASE_URL", "https://deepseek.test");
     const config = resolveRuntimeConfig({

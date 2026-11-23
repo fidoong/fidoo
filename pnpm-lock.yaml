@@ -254,6 +254,9 @@ importers:
       '@fidoo/core':
         specifier: workspace:^
         version: link:../core
+      '@fidoo/protocol':
+        specifier: workspace:^
+        version: link:../protocol
       execa:
         specifier: ^10.2.1
         version: 10.2.1

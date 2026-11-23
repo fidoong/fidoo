@@ -1,12 +1,15 @@
 import type { ArtifactReference, PublicRunEvent } from "@fidoo/protocol";
 
 export type RunStatus = "running" | "completed" | "failed" | "blocked" | "cancelled";
-export type TraceSpanKind = "run" | "tool" | "verification";
+export type TraceSpanKind = "run" | "model" | "tool" | "verification";
 export type TraceSpanStatus = "running" | "success" | "error" | "rejected" | "incomplete";
 
 export interface RunMetrics {
   inputTokens: number;
   outputTokens: number;
+  modelCalls: number;
+  failedModelCalls: number;
+  modelDurationMs: number;
   toolCalls: number;
   failedTools: number;
   approvalWaitMs: number;

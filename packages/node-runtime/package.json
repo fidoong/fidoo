@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fidoo/core": "workspace:^",
+    "@fidoo/protocol": "workspace:^",
     "execa": "^10.2.1",
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.16",

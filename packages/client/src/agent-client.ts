@@ -2,17 +2,21 @@ import type {
   AgentTransport,
   ApprovalRespondParams,
   ArtifactReadParams,
+  ProviderModelsParams,
   RunIdParams,
   RunListParams,
   RunResumeParams,
   RunStartParams,
   RunSteerParams,
   RunSubscribeParams,
+  SettingsUpdateParams,
   WorkspaceValidateParams,
 } from "@fidoo/protocol";
 import {
   apiResultSchema,
   artifactPageSchema,
+  providerModelsResultSchema,
+  providerSettingsSchema,
   publicRunEventSchema,
   runSnapshotSchema,
   runStartResultSchema,
@@ -26,12 +30,14 @@ export class AgentClient {
   readonly run: RunClient;
   readonly artifacts: ArtifactClient;
   readonly approval: ApprovalClient;
+  readonly settings: SettingsClient;
 
   constructor(transport: AgentTransport) {
     this.workspace = new WorkspaceClient(transport);
     this.run = new RunClient(transport);
     this.artifacts = new ArtifactClient(transport);
     this.approval = new ApprovalClient(transport);
+    this.settings = new SettingsClient(transport);
   }
 }
 
@@ -92,6 +98,22 @@ class ArtifactClient {
 
   async read(params: ArtifactReadParams) {
     return artifactPageSchema.parse(await this.transport.call("artifact.read", params));
+  }
+}
+
+class SettingsClient {
+  constructor(private readonly transport: AgentTransport) {}
+
+  async get() {
+    return providerSettingsSchema.parse(await this.transport.call("settings.get", {}));
+  }
+
+  async update(params: SettingsUpdateParams) {
+    return providerSettingsSchema.parse(await this.transport.call("settings.update", params));
+  }
+
+  async listModels(params: ProviderModelsParams) {
+    return providerModelsResultSchema.parse(await this.transport.call("settings.models", params));
   }
 }
 

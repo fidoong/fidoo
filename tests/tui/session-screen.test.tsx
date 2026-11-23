@@ -3,6 +3,7 @@ import type { AgentTransport, ApiMethod } from "@fidoo/protocol";
 import { AgentController, type ThemePreference, TuiApp } from "@fidoo/tui";
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { commandDefinitions } from "../../packages/tui/src/commands.js";
 import { publicEvent as event } from "../helpers/public-event.js";
 
 const cleanups: Array<() => void> = [];
@@ -46,6 +47,14 @@ describe("TUI keyboard flow", () => {
     expect(lastFrame()).toContain("Verified");
     expect(lastFrame()).not.toContain("## Task fixed");
     expect(lastFrame()).not.toContain("**Verified**");
+    stdin.write("/status");
+    await vi.waitFor(() => expect(lastFrame()).toContain("/status"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Run status"));
+    expect(lastFrame()).toContain("fake / fake-model");
+    expect(lastFrame()).toContain("completed");
+    stdin.write("\u001b");
+    await vi.waitFor(() => expect(lastFrame()).not.toContain("Read-only status"));
     expect(transport.approvals).toEqual([
       { runId: "run-1", callId: "edit", decision: "approved", reason: "Approved in TUI" },
     ]);
@@ -78,6 +87,19 @@ describe("TUI keyboard flow", () => {
     await vi.waitFor(() => expect(lastFrame()).not.toContain("🚀"));
     expect(lastFrame()).toContain("second");
     expect(transport.started).toBe(0);
+  });
+
+  it("shows every command in slash completion instead of truncating the list", async () => {
+    const transport = new KeyboardTransport("approval");
+    const { lastFrame, stdin } = renderSession(transport);
+    stdin.write("/");
+    await vi.waitFor(() => expect(lastFrame()).toContain(`${commandDefinitions.length} commands`));
+    expect(lastFrame()).toContain("/status");
+    expect(lastFrame()).toContain("/plan");
+    expect(lastFrame()).toContain("/output");
+    expect(lastFrame()).toContain("/cancel");
+    expect(lastFrame()).toContain("/resume <run-id>");
+    expect(lastFrame()).toContain("/artifact <id>");
   });
 
   it("clears a draft with Escape and opens the help panel", async () => {

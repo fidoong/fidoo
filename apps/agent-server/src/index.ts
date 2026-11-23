@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { AgentApi } from "@fidoo/api";
 import { errorMessage } from "@fidoo/core";
-import { createNodeRuntime } from "@fidoo/node-runtime";
+import { createNodeRuntime, NodeSettingsManager } from "@fidoo/node-runtime";
 import { Command, InvalidArgumentError } from "commander";
 import type { ServerOptions } from "./config.js";
 import { resolveServerConfig } from "./config.js";
@@ -14,7 +14,10 @@ program
   .version("0.1.0")
   .option("--stdio", "serve newline-delimited JSON-RPC over stdio")
   .option("--cwd <path>", "workspace directory", process.cwd())
-  .option("--provider <name>", "openai or deepseek")
+  .option(
+    "--provider <name>",
+    "openai, deepseek, kimi, kimi-code, qwen, zhipu, xai, openrouter, anthropic, gemini, or custom",
+  )
   .option("--model <name>", "model name; defaults to FIDOO_MODEL")
   .option("--base-url <url>", "OpenAI-compatible API base URL")
   .option("--thinking <mode>", "DeepSeek thinking: enabled or disabled", parseThinking)
@@ -34,12 +37,15 @@ try {
   if (!options.stdio) {
     throw new Error("Select a transport with --stdio");
   }
-  const runtime = await createNodeRuntime(resolveServerConfig(options));
+  const config = resolveServerConfig(options);
+  const runtime = await createNodeRuntime(config);
+  const settings = new NodeSettingsManager(config);
   const api = new AgentApi({
     createRunService: runtime.createRunService,
     eventStore: runtime.eventStore,
     artifacts: runtime.artifacts,
     workspace: runtime.workspace,
+    settings,
   });
   const server = new StdioServer(api);
   server.listen();

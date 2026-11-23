@@ -1,9 +1,10 @@
 import { Box, Static, Text } from "ink";
 import { memo, useMemo } from "react";
 import { theme } from "../theme.js";
-import type { ToolCard, ViewMessage } from "../types.js";
+import type { ToolCard, TuiState, ViewMessage } from "../types.js";
 import { BrandHeader } from "./brand.js";
 import { Markdown } from "./markdown.js";
+import { ReasoningPanel } from "./reasoning-panel.js";
 import { Spinner } from "./spinner.js";
 import { ToolCallCard, ToolGroupCard } from "./tool-call-card.js";
 
@@ -70,7 +71,7 @@ const StreamingMessage = memo(function StreamingMessage({ text }: { text: string
           ƒ fidoo{" "}
         </Text>
         <Spinner active />
-        <Text dimColor> writing</Text>
+        <Text dimColor> responding</Text>
       </Text>
       <Markdown source={text} />
     </Box>
@@ -82,6 +83,8 @@ export const MessageList = memo(function MessageList({
   streamingText,
   tools = [],
   expanded = false,
+  reasoningState,
+  reasoningExpanded = false,
   provider,
   model,
 }: {
@@ -89,13 +92,41 @@ export const MessageList = memo(function MessageList({
   streamingText: string;
   tools?: ToolCard[];
   expanded?: boolean;
+  reasoningState?: TuiState;
+  reasoningExpanded?: boolean;
   provider?: string | undefined;
   model?: string | undefined;
 }) {
+  const finalReasoningIndex = reasoningState?.reasoningMessageId
+    ? messages.findIndex((message) => message.id === reasoningState.reasoningMessageId)
+    : -1;
+  const responseActive = reasoningState?.responseActive ?? false;
+  let reasoningStart = finalReasoningIndex;
+  if (finalReasoningIndex < 0 && responseActive) {
+    reasoningStart = messages.findLastIndex((message) => message.role === "user") + 1;
+  }
+  while (
+    reasoningStart > 0 &&
+    messages[reasoningStart]?.continuation &&
+    messages[reasoningStart - 1]?.role === "assistant"
+  ) {
+    reasoningStart -= 1;
+  }
+  const reasoningMessages =
+    finalReasoningIndex >= 0 || (responseActive && reasoningStart < messages.length)
+      ? messages
+          .slice(
+            reasoningStart,
+            finalReasoningIndex >= 0 ? finalReasoningIndex + 1 : messages.length,
+          )
+          .filter((message) => message.role === "assistant")
+      : [];
+  const reasoningMessageIds = new Set(reasoningMessages.map((message) => message.id));
   const { entries, currentTools, lastCompletedTool } = useMemo(() => {
     const completed = tools.filter((tool) => tool.status === "success" || tool.status === "error");
+    const timelineMessages = messages.filter((message) => !reasoningMessageIds.has(message.id));
     const ordered: Array<MessageEntry | ToolEntry> = [
-      ...messages.map<MessageEntry>((message) => ({
+      ...timelineMessages.map<MessageEntry>((message) => ({
         id: message.id,
         seq: message.seq,
         kind: "message",
@@ -143,7 +174,7 @@ export const MessageList = memo(function MessageList({
       ].sort((left, right) => left.seq - right.seq),
       lastCompletedTool: completed.toSorted((left, right) => left.seq - right.seq).at(-1),
     };
-  }, [messages, tools, provider, model]);
+  }, [messages, tools, provider, model, reasoningMessageIds]);
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -155,6 +186,12 @@ export const MessageList = memo(function MessageList({
           <ToolCallCard tool={lastCompletedTool} expanded />
         </Box>
       ) : null}
+      {reasoningState ? (
+        <ReasoningPanel state={reasoningState} expanded={reasoningExpanded} />
+      ) : null}
+      {reasoningMessages.map((message) => (
+        <MessageItem key={message.id} message={message} />
+      ))}
       {streamingText ? <StreamingMessage text={streamingText} /> : null}
     </Box>
   );

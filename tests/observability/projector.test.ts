@@ -78,6 +78,35 @@ describe("observability projector", () => {
     expect(run.artifacts).toHaveLength(1);
   });
 
+  it("builds accurate model spans from lifecycle events", () => {
+    const run = projectRun("run-1", [
+      event(1, "2026-01-01T00:00:00.000Z", "run.started", { task: "Inspect", cwd: "/" }),
+      event(2, "2026-01-01T00:00:01.000Z", "model.started", { iteration: 1, model: "fake-model" }),
+      event(3, "2026-01-01T00:00:03.500Z", "model.completed", {
+        iteration: 1,
+        model: "fake-model",
+        durationMs: 2500,
+        contentLength: 4,
+        toolCalls: 0,
+      }),
+      event(4, "2026-01-01T00:00:04.000Z", "run.completed", {
+        summary: "Done",
+        verification: "not-required",
+      }),
+    ]);
+    expect(run.spans[1]).toMatchObject({
+      kind: "model",
+      name: "fake-model",
+      status: "success",
+      durationMs: 2500,
+    });
+    expect(run.metrics).toMatchObject({
+      modelCalls: 1,
+      failedModelCalls: 0,
+      modelDurationMs: 2500,
+    });
+  });
+
   it("marks unfinished spans incomplete after a terminal run", () => {
     const run = projectRun("run-1", [
       event(1, "2026-01-01T00:00:00.000Z", "run.started", { task: "Inspect", cwd: "/" }),

@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { paletteDefinitions } from "../commands.js";
+import { commandLabel, paletteDefinitions } from "../commands.js";
 import { theme } from "../theme.js";
 
 export function CommandDialog({ selected }: { selected: number }) {
@@ -22,7 +22,7 @@ export function CommandDialog({ selected }: { selected: number }) {
             <Text>
               <Text color={active ? theme.accent : theme.muted}>{active ? "› " : "  "}</Text>
               <Text bold={active} color={active ? theme.accent : theme.brand}>
-                {command.name.padEnd(12)}
+                {commandLabel(command).padEnd(12)}
               </Text>
               <Text dimColor> {command.description}</Text>
             </Text>

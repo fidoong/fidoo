@@ -10,6 +10,7 @@ import {
   InteractiveApproval,
   LocalWorkspace,
   loadPermissionPolicy,
+  resolveProviderConnection,
 } from "@fidoo/node-runtime";
 import type { PublicRunEvent, RunSnapshot } from "@fidoo/protocol";
 import { Command, InvalidArgumentError } from "commander";
@@ -29,7 +30,11 @@ program
   .description("Fidoo — provider-neutral, verification-driven coding agent")
   .version("0.1.0")
   .option("--cwd <path>", "workspace directory", process.cwd())
-  .option("--provider <name>", "openai or deepseek", parseProvider)
+  .option(
+    "--provider <name>",
+    "openai, deepseek, kimi, kimi-code, qwen, zhipu, xai, openrouter, anthropic, gemini, or custom",
+    parseProvider,
+  )
   .option("--model <name>", "model name; defaults to FIDOO_MODEL")
   .option("--base-url <url>", "OpenAI-compatible API base URL")
   .option("--thinking <mode>", "DeepSeek thinking: enabled or disabled", parseThinking)
@@ -72,7 +77,7 @@ program
   .description("open the interactive terminal UI backed by fidoo-server --stdio")
   .action(async () => {
     const options = program.opts<GlobalOptions>();
-    await launchTui(resolveRuntimeConfig(options));
+    await launchTui(resolveRuntimeConfig(options, true));
   });
 
 program
@@ -158,17 +163,18 @@ program
   .action(async () => {
     const options = program.opts<GlobalOptions>();
     const provider = parseProvider(options.provider ?? process.env.FIDOO_PROVIDER);
-    const model =
-      options.model ??
-      process.env.FIDOO_MODEL ??
-      (provider === "deepseek" ? "deepseek-flash" : undefined);
-    const configuredBaseURL =
-      options.baseUrl ??
-      process.env.FIDOO_BASE_URL ??
-      (provider === "deepseek" ? process.env.DEEPSEEK_BASE_URL : process.env.OPENAI_BASE_URL);
-    const baseURL =
-      configuredBaseURL ??
-      (provider === "deepseek" ? "https://api.deepseek.com" : "https://api.openai.com/v1");
+    const connection = resolveProviderConnection(
+      {
+        provider,
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
+        ...(options.thinking ? { thinking: options.thinking } : {}),
+      },
+      dataHome(),
+    );
+    const model = connection.model;
+    const baseURL = connection.baseURL;
+    const configuredBaseURL = options.baseUrl ?? process.env.FIDOO_BASE_URL;
     let workspace: { path: string; valid: boolean; error?: string };
     try {
       workspace = {
@@ -210,14 +216,10 @@ program
           permission,
           provider,
           model,
-          modelConfigured:
-            provider === "deepseek" || Boolean(options.model ?? process.env.FIDOO_MODEL),
-          baseURL: safeBaseURL(baseURL),
+          modelConfigured: Boolean(model),
+          baseURL: safeBaseURL(baseURL ?? ""),
           providerTimeoutMs: 120_000,
-          apiKeyConfigured: Boolean(
-            process.env.FIDOO_API_KEY ??
-              (provider === "deepseek" ? process.env.DEEPSEEK_API_KEY : process.env.OPENAI_API_KEY),
-          ),
+          apiKeyConfigured: Boolean(connection.apiKey),
           baseURLConfigured: Boolean(configuredBaseURL),
           thinking: provider === "deepseek" ? (options.thinking ?? "enabled") : undefined,
         },
@@ -232,7 +234,7 @@ program.action(async () => {
     program.outputHelp();
     return;
   }
-  await launchTui(resolveRuntimeConfig(program.opts<GlobalOptions>()));
+  await launchTui(resolveRuntimeConfig(program.opts<GlobalOptions>(), true));
 });
 
 async function launchTui(config: RuntimeConfig): Promise<void> {
