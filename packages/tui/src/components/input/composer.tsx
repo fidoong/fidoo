@@ -1,8 +1,8 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import { commandDefinitions, commandLabel } from "../commands.js";
-import { theme } from "../theme.js";
-import { Spinner } from "./spinner.js";
+import { commandDefinitions, commandLabel } from "../../commands/definitions.js";
+import { theme } from "../../theme/index.js";
+import { Spinner } from "../layout/spinner.js";
 
 export function Composer({
   enabled,
@@ -73,32 +73,32 @@ export function Composer({
   );
 
   return (
-    <Box
-      flexDirection="column"
-      width="100%"
-      borderStyle="single"
-      borderColor={enabled ? theme.accent : theme.border}
-      paddingX={1}
-    >
-      <Box justifyContent="space-between" marginBottom={1}>
+    <Box flexDirection="column" width="100%">
+      <Box width="100%" justifyContent="space-between">
+        <Box flexGrow={1}>
+          {enabled ? (
+            <Text wrap="wrap">
+              <Text bold color={theme.accent}>
+                ›{" "}
+              </Text>
+              <InputValue value={value} />
+            </Text>
+          ) : (
+            <Text>
+              <Spinner active color={theme.accent} /> <Text bold>Working</Text>
+            </Text>
+          )}
+        </Box>
         <Text dimColor>
-          {enabled ? (busy ? "Steer current run" : "Message fidoo") : "Fidoo is working"}
+          {enabled
+            ? busy
+              ? "Enter steer · Ctrl+C cancel"
+              : value
+                ? "Enter send"
+                : "Enter send · / commands"
+            : "Ctrl+C cancel"}
         </Text>
-        <Text dimColor>{enabled ? (busy ? "Enter ↵ steer" : "Enter ↵") : "Ctrl+C cancel"}</Text>
       </Box>
-      {enabled ? (
-        <Text wrap="wrap">
-          <Text bold color={theme.accent}>
-            ›{" "}
-          </Text>
-          <InputValue value={value} />
-        </Text>
-      ) : (
-        <Text>
-          <Spinner active color={theme.accent} /> <Text bold>Working</Text>
-          <Text dimColor> · inspect, edit, verify</Text>
-        </Text>
-      )}
       {enabled && suggestions.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           <Text dimColor>{suggestions.length} commands · ↑/↓ select · Tab complete</Text>
@@ -114,15 +114,6 @@ export function Composer({
               </Text>
             );
           })}
-        </Box>
-      ) : null}
-      {enabled && !value ? (
-        <Box marginTop={1}>
-          <Text dimColor>
-            {busy
-              ? "Enter sends guidance · Ctrl+C cancel · /help"
-              : "Enter send · Ctrl+J newline · ↑ history · / commands · Ctrl+K palette"}
-          </Text>
         </Box>
       ) : null}
     </Box>

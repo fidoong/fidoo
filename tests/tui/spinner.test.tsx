@@ -1,6 +1,6 @@
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Spinner } from "../../packages/tui/src/components/spinner.js";
+import { Spinner } from "../../packages/tui/src/components/layout/spinner.js";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {

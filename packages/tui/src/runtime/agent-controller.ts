@@ -94,7 +94,10 @@ export class AgentController {
       throw new Error("No active run is available for steering");
     }
     await this.client.run.steer({ runId: this.state.runId, task });
-    this.update({ ...this.state, notice: "Steering recorded · next model turn" });
+    this.update({
+      ...this.state,
+      notice: "Guidance queued · applies after the current model turn",
+    });
   }
 
   async cancel(): Promise<void> {

@@ -1,5 +1,5 @@
 import { Text, useStdout } from "ink";
-import { theme } from "../theme.js";
+import { theme } from "../../theme/index.js";
 
 export function useTerminalColumns(): number {
   const { stdout } = useStdout();

@@ -1,7 +1,7 @@
 import { Text } from "ink";
 import { useSyncExternalStore } from "react";
-import { animationFrame, subscribeAnimation } from "../animation-clock.js";
-import { theme } from "../theme.js";
+import { animationFrame, subscribeAnimation } from "../../runtime/animation-clock.js";
+import { theme } from "../../theme/index.js";
 
 const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 

@@ -3,7 +3,7 @@ import type { AgentTransport, ApiMethod } from "@fidoo/protocol";
 import { AgentController, type ThemePreference, TuiApp } from "@fidoo/tui";
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { commandDefinitions } from "../../packages/tui/src/commands.js";
+import { commandDefinitions } from "../../packages/tui/src/commands/definitions.js";
 import { publicEvent as event } from "../helpers/public-event.js";
 
 const cleanups: Array<() => void> = [];
@@ -24,6 +24,12 @@ describe("TUI keyboard flow", () => {
     expect(lastFrame()).toContain("Ctrl+K command palette");
     expect(lastFrame()).not.toContain("coding-agent");
     expect(lastFrame()).not.toContain("◆ Agent");
+    const lines = (lastFrame() ?? "").split("\n");
+    expect(lines.find((line) => line.includes("ƒ fidoo"))).toMatch(/^ƒ fidoo/);
+    expect(lines.find((line) => line.includes("What will you build?"))).toMatch(
+      /^ {2}What will you build\?/,
+    );
+    expect(lines.find((line) => line.includes("idle"))).toMatch(/^\S/);
   });
 
   it("submits a task and approves the pending tool with y", async () => {

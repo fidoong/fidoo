@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
-import { theme } from "../theme.js";
-import { Spinner } from "./spinner.js";
+import { theme } from "../../theme/index.js";
+import { Spinner } from "../layout/spinner.js";
 
 export function OutputDialog({
   title,

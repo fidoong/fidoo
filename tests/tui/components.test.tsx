@@ -1,9 +1,9 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
-import { ApprovalDialog } from "../../packages/tui/src/components/approval-dialog.js";
-import { StatusBar } from "../../packages/tui/src/components/status-bar.js";
-import { ToolCallCard } from "../../packages/tui/src/components/tool-call-card.js";
-import { initialTuiState } from "../../packages/tui/src/store.js";
+import { ToolCallCard } from "../../packages/tui/src/components/conversation/tool-call-card.js";
+import { ApprovalDialog } from "../../packages/tui/src/components/dialogs/approval-dialog.js";
+import { StatusBar } from "../../packages/tui/src/components/layout/status-bar.js";
+import { initialTuiState } from "../../packages/tui/src/runtime/store.js";
 
 describe("TUI themed components", () => {
   it("renders a highlighted bash approval", () => {
@@ -57,7 +57,27 @@ describe("TUI themed components", () => {
     );
     expect(view.lastFrame()).toContain("kimi-code");
     expect(view.lastFrame()).toContain("k3.1-pro");
-    expect(view.lastFrame()).toContain("context 2.5k / 100.0k · 3%");
+    expect(view.lastFrame()).toContain("ctx 2.5k/100.0k · 3%");
+    view.unmount();
+  });
+
+  it("shows the active model turn and queued steering instead of a generic spinner", () => {
+    const state = {
+      ...initialTuiState(),
+      phase: "running" as const,
+      steeringPending: 1,
+      modelActivity: {
+        active: true,
+        calls: 14,
+        durationMs: 0,
+        failures: 0,
+        iteration: 15,
+        startedAt: Date.now() - 5000,
+      },
+    };
+    const view = render(<StatusBar state={state} />);
+    expect(view.lastFrame()).toContain("model turn 15");
+    expect(view.lastFrame()).toContain("guidance queued (1)");
     view.unmount();
   });
 

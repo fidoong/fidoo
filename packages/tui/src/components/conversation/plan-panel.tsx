@@ -1,11 +1,14 @@
 import { Box, Text } from "ink";
-import { createPlanSteps, type PlanStep } from "../plan.js";
-import { theme } from "../theme.js";
-import type { TuiState } from "../types.js";
-import { Spinner } from "./spinner.js";
+import { createPlanSteps, type PlanStep } from "../../runtime/plan.js";
+import type { TuiState } from "../../runtime/types.js";
+import { theme } from "../../theme/index.js";
+import { Spinner } from "../layout/spinner.js";
 
 export function PlanPanel({ state, expanded = false }: { state: TuiState; expanded?: boolean }) {
   if (!state.runId) {
+    return null;
+  }
+  if (!state.taskPlan && ["completed", "failed", "blocked", "cancelled"].includes(state.phase)) {
     return null;
   }
   if (state.taskPlan) {

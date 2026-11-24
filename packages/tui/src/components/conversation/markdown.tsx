@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import { Lexer, type Token, type Tokens } from "marked";
 import { memo, type ReactNode, useMemo } from "react";
-import { theme } from "../theme.js";
+import { theme } from "../../theme/index.js";
 import { CodeBlock } from "./code.js";
 
 export const Markdown = memo(function Markdown({ source }: { source: string }) {
@@ -29,7 +29,7 @@ function renderBlock(token: Token, key: string): ReactNode {
       );
     case "paragraph":
       return (
-        <Box key={key} marginBottom={1}>
+        <Box key={key}>
           <Text wrap="wrap">{renderInline(token.tokens ?? [])}</Text>
         </Box>
       );
@@ -45,7 +45,7 @@ function renderBlock(token: Token, key: string): ReactNode {
       const list = token as Tokens.List;
       const itemKeys = new Map<string, number>();
       return (
-        <Box key={key} flexDirection="column" marginBottom={1}>
+        <Box key={key} flexDirection="column">
           {list.items.map((item, index) =>
             renderListItem(item, list, index, nextKey(itemKeys, item.raw)),
           )}
@@ -55,7 +55,7 @@ function renderBlock(token: Token, key: string): ReactNode {
     case "blockquote": {
       const quoteKeys = new Map<string, number>();
       return (
-        <Box key={key} flexDirection="column" marginBottom={1}>
+        <Box key={key} flexDirection="column">
           {(token.tokens ?? []).map((child) => {
             const childKey = nextKey(quoteKeys, child.raw);
             return (
@@ -78,7 +78,7 @@ function renderBlock(token: Token, key: string): ReactNode {
       const table = token as Tokens.Table;
       const rowKeys = new Map<string, number>();
       return (
-        <Box key={key} flexDirection="column" marginBottom={1}>
+        <Box key={key} flexDirection="column">
           <Text bold>{renderCells(table.header)}</Text>
           <Text dimColor>{"─".repeat(32)}</Text>
           {table.rows.map((row) => (

@@ -26,14 +26,9 @@ describe("streaming timeline", () => {
       await vi.waitFor(() => expect(view.lastFrame()).toContain("completed"));
       expect(view.lastFrame()?.match(/First paragraph/g)).toHaveLength(1);
       expect(view.lastFrame()?.match(/Second paragraph/g)).toHaveLength(1);
-      expect(view.lastFrame()).toContain("Reasoning");
+      expect(view.lastFrame()).not.toContain("Reasoning");
       expect(view.lastFrame()).not.toContain("First hidden line");
-      expect(view.lastFrame()).toContain("Second preview line");
-      expect(view.lastFrame()).toContain("Third preview line");
-      expect(view.lastFrame()).toContain("Fourth preview line");
-      const frame = view.lastFrame() ?? "";
-      expect(frame.indexOf("Reasoning")).toBeLessThan(frame.indexOf("First paragraph"));
-      expect(frame.indexOf("Reasoning")).toBeLessThan(frame.indexOf("Tail"));
+      expect(view.lastFrame()).not.toContain("Fourth preview line");
       view.stdin.write("\u0012");
       await vi.waitFor(() => expect(view.lastFrame()).toContain("First hidden line"));
       expect(view.lastFrame()).toContain("transient, not saved");

@@ -1,7 +1,7 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
-import { MessageList } from "../../packages/tui/src/components/message-list.js";
-import type { ToolCard, ViewMessage } from "../../packages/tui/src/types.js";
+import { MessageList } from "../../packages/tui/src/components/conversation/message-list.js";
+import type { ToolCard, ViewMessage } from "../../packages/tui/src/runtime/types.js";
 
 describe("MessageList", () => {
   it("keeps long history in static output while streaming independently", () => {

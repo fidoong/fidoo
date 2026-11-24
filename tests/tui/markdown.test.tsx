@@ -1,6 +1,6 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
-import { Markdown } from "../../packages/tui/src/components/markdown.js";
+import { Markdown } from "../../packages/tui/src/components/conversation/markdown.js";
 
 describe("Markdown terminal rendering", () => {
   it("renders structure instead of exposing markdown delimiters", () => {

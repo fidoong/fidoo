@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { THEME_PRESET_IDS, THEME_PRESETS, type ThemePresetId, theme } from "../theme.js";
+import { THEME_PRESET_IDS, THEME_PRESETS, type ThemePresetId, theme } from "../../theme/index.js";
 
 export function ThemeDialog({ selected, current }: { selected: number; current: ThemePresetId }) {
   return (

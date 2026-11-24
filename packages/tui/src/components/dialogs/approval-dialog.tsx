@@ -1,9 +1,9 @@
 import { Box, Text } from "ink";
-import { theme } from "../theme.js";
-import type { PendingApproval } from "../types.js";
-import { Key } from "./chrome.js";
-import { CommandHighlight } from "./code.js";
-import { formatArguments } from "./tool-call-card.js";
+import type { PendingApproval } from "../../runtime/types.js";
+import { theme } from "../../theme/index.js";
+import { CommandHighlight } from "../conversation/code.js";
+import { formatArguments } from "../conversation/tool-call-card.js";
+import { Key } from "../layout/chrome.js";
 
 export function ApprovalDialog({ approval }: { approval: PendingApproval }) {
   const danger = approval.risk === "high";

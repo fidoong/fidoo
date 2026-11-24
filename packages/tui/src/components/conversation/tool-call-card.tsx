@@ -1,9 +1,9 @@
 import { Box, Text } from "ink";
 import { memo } from "react";
-import { theme } from "../theme.js";
-import type { ToolCard } from "../types.js";
+import type { ToolCard } from "../../runtime/types.js";
+import { theme } from "../../theme/index.js";
+import { Spinner } from "../layout/spinner.js";
 import { CodeBlock, CommandHighlight } from "./code.js";
-import { Spinner } from "./spinner.js";
 
 const presentation = {
   proposed: { icon: "·", color: theme.muted, label: "queued" },

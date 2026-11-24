@@ -16,6 +16,7 @@ export function initialTuiState(): TuiState {
     streamingText: "",
     streamingBlocksStarted: false,
     responseActive: false,
+    responseStartIndex: undefined,
     reasoningText: "",
     reasoningActive: false,
     reasoningStartedAt: undefined,
@@ -28,7 +29,15 @@ export function initialTuiState(): TuiState {
     verificationStatus: undefined,
     usage: { inputTokens: 0, outputTokens: 0 },
     contextTokens: 0,
-    modelActivity: { active: false, calls: 0, durationMs: 0, failures: 0 },
+    modelActivity: {
+      active: false,
+      calls: 0,
+      durationMs: 0,
+      failures: 0,
+      iteration: 0,
+      startedAt: undefined,
+    },
+    steeringPending: 0,
     lastSeq: 0,
     notice: undefined,
     error: undefined,
@@ -46,6 +55,7 @@ export function markStarting(state: TuiState): TuiState {
     streamingText: "",
     streamingBlocksStarted: false,
     responseActive: false,
+    responseStartIndex: undefined,
     reasoningText: "",
     reasoningActive: false,
     reasoningStartedAt: undefined,
@@ -71,6 +81,7 @@ export function appendReasoningText(state: TuiState, text: string): TuiState {
     ...state,
     reasoningText: combined.length > 64_000 ? `…${combined.slice(-64_000)}` : combined,
     responseActive: true,
+    responseStartIndex: state.responseStartIndex ?? state.messages.length,
     reasoningActive: true,
     reasoningMessageId: undefined,
     reasoningStartedAt: state.reasoningStartedAt ?? now,
@@ -80,9 +91,15 @@ export function appendReasoningText(state: TuiState, text: string): TuiState {
 
 export function appendStreamingText(state: TuiState, text: string): TuiState {
   const source = state.streamingText + text;
+  const current = state.reasoningActive ? finishReasoning(state) : state;
   const { complete, rest } = splitStreamingMarkdown(source);
   if (!complete) {
-    return { ...state, streamingText: rest, responseActive: true };
+    return {
+      ...current,
+      streamingText: rest,
+      responseActive: true,
+      responseStartIndex: current.responseStartIndex ?? current.messages.length,
+    };
   }
   const message: ViewMessage = {
     id: `streaming-${state.runId ?? "new"}-${state.messages.length}-${state.lastSeq}`,
@@ -92,11 +109,12 @@ export function appendStreamingText(state: TuiState, text: string): TuiState {
     continuation: state.streamingBlocksStarted,
   };
   return {
-    ...state,
-    messages: [...state.messages, message],
+    ...current,
+    messages: [...current.messages, message],
     streamingText: rest,
     streamingBlocksStarted: true,
     responseActive: true,
+    responseStartIndex: current.responseStartIndex ?? current.messages.length,
   };
 }
 
@@ -157,10 +175,20 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         notice: `Context compacted · omitted ${Number(event.payload.omittedMessages)} older messages`,
       };
     case "run.steered":
-      return { ...state, phase: "running", notice: "Steering recorded · next model turn" };
+      return {
+        ...state,
+        phase: "running",
+        steeringPending: state.steeringPending + 1,
+        notice: "Guidance queued · applies after the current model turn",
+      };
     case "message.user":
       return appendMessage(
-        state,
+        {
+          ...state,
+          steeringPending: event.payload.steeringId
+            ? Math.max(0, state.steeringPending - 1)
+            : state.steeringPending,
+        },
         event.eventId,
         event.seq,
         "user",
@@ -190,19 +218,27 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
       return {
         ...state,
         responseActive: true,
+        responseStartIndex: state.messages.length,
         reasoningText: "",
         reasoningActive: false,
         reasoningStartedAt: undefined,
         reasoningEndedAt: undefined,
         reasoningMessageId: undefined,
-        modelActivity: { ...state.modelActivity, active: true },
+        modelActivity: {
+          ...state.modelActivity,
+          active: true,
+          iteration: Number(event.payload.iteration ?? 0),
+          startedAt: Date.parse(event.timestamp),
+        },
       };
     case "model.completed":
       return {
         ...state,
         modelActivity: {
           active: false,
+          startedAt: undefined,
           calls: state.modelActivity.calls + 1,
+          iteration: state.modelActivity.iteration,
           durationMs: state.modelActivity.durationMs + Number(event.payload.durationMs ?? 0),
           failures: state.modelActivity.failures,
         },
@@ -214,6 +250,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         modelActivity: {
           ...state.modelActivity,
           active: false,
+          startedAt: undefined,
           durationMs: state.modelActivity.durationMs + Number(event.payload.durationMs ?? 0),
           failures: state.modelActivity.failures + 1,
         },

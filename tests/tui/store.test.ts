@@ -1,6 +1,6 @@
-import { applyRunEvent, initialTuiState } from "@fidoo/tui";
+import { applyRunEvent, initialTuiState, type TuiState } from "@fidoo/tui";
 import { describe, expect, it } from "vitest";
-import { splitStreamingMarkdown } from "../../packages/tui/src/store.js";
+import { splitStreamingMarkdown } from "../../packages/tui/src/runtime/store.js";
 import { publicEvent as event } from "../helpers/public-event.js";
 
 describe("TUI event projection", () => {
@@ -168,7 +168,29 @@ describe("TUI event projection", () => {
         recoverable: true,
       }),
     );
-    expect(state.modelActivity).toEqual({ active: false, calls: 1, durationMs: 1500, failures: 1 });
+    expect(state.modelActivity).toEqual({
+      active: false,
+      calls: 1,
+      durationMs: 1500,
+      failures: 1,
+      iteration: 1,
+      startedAt: undefined,
+    });
+  });
+
+  it("marks each model response by its exact message index", () => {
+    let state: TuiState = {
+      ...initialTuiState(),
+      messages: [{ id: "previous", seq: 1, role: "assistant", content: "Previous" }],
+    };
+    state = applyRunEvent(state, event(1, "model.started", { iteration: 2, model: "fake" }));
+    expect(state.responseStartIndex).toBe(1);
+    state = applyRunEvent(
+      state,
+      event(2, "message.assistant", { message: { role: "assistant", content: "Current" } }),
+    );
+    state = applyRunEvent(state, event(3, "model.started", { iteration: 3, model: "fake" }));
+    expect(state.responseStartIndex).toBe(2);
   });
 
   it("accumulates persistent usage across model requests", () => {

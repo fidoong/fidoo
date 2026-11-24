@@ -1,6 +1,6 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { SettingsDialog } from "../../packages/tui/src/components/settings-dialog.js";
+import { SettingsDialog } from "../../packages/tui/src/components/dialogs/settings-dialog.js";
 
 describe("SettingsDialog", () => {
   it("discovers live models after connection setup and saves the selected model", async () => {

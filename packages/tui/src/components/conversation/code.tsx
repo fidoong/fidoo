@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import { memo, type ReactNode } from "react";
-import { theme } from "../theme.js";
+import { theme } from "../../theme/index.js";
 
 const keywords = new Set([
   "async",

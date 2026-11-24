@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
-import { commandDefinitions, commandLabel } from "../commands.js";
-import { theme } from "../theme.js";
-import { Key } from "./chrome.js";
+import { commandDefinitions, commandLabel } from "../../commands/definitions.js";
+import { theme } from "../../theme/index.js";
+import { Key } from "../layout/chrome.js";
 
 export function HelpDialog() {
   return (

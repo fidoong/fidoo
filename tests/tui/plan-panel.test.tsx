@@ -1,7 +1,7 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
-import { PlanPanel } from "../../packages/tui/src/components/plan-panel.js";
-import { initialTuiState } from "../../packages/tui/src/store.js";
+import { PlanPanel } from "../../packages/tui/src/components/conversation/plan-panel.js";
+import { initialTuiState } from "../../packages/tui/src/runtime/store.js";
 
 describe("Task plan panel", () => {
   it("renders the durable agent plan and evidence instead of the derived fallback", () => {

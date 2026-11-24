@@ -1,6 +1,6 @@
 import type { RunSummary } from "@fidoo/protocol";
 import { Box, Text } from "ink";
-import { theme } from "../theme.js";
+import { theme } from "../../theme/index.js";
 
 export function SessionsDialog({
   sessions,

@@ -20,7 +20,7 @@ describe("TUI run steering", () => {
       view.stdin.write("Initial task");
       await vi.waitFor(() => expect(view.lastFrame()).toContain("Initial task"));
       view.stdin.write("\r");
-      await vi.waitFor(() => expect(view.lastFrame()).toContain("Steer current run"));
+      await vi.waitFor(() => expect(view.lastFrame()).toContain("Enter steer"));
       view.stdin.write("Keep the API stable");
       await vi.waitFor(() => expect(view.lastFrame()).toContain("Keep the API stable"));
       view.stdin.write("\r");

@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
-import { theme } from "../theme.js";
-import type { TuiState } from "../types.js";
+import type { TuiState } from "../../runtime/types.js";
+import { theme } from "../../theme/index.js";
 
 export function StatusDialog({
   state,

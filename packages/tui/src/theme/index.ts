@@ -1,4 +1,4 @@
-import type { TuiPhase } from "./types.js";
+import type { TuiPhase } from "../runtime/types.js";
 
 export interface ThemeColors {
   brand: string;

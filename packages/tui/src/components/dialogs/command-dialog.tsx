@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
-import { commandLabel, paletteDefinitions } from "../commands.js";
-import { theme } from "../theme.js";
+import { commandLabel, paletteDefinitions } from "../../commands/definitions.js";
+import { theme } from "../../theme/index.js";
 
 export function CommandDialog({ selected }: { selected: number }) {
   return (

@@ -7,23 +7,24 @@ import type {
 } from "@fidoo/protocol";
 import { Box, Text, useApp, useInput } from "ink";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { AgentController } from "./agent-controller.js";
-import { commandDefinitions, paletteDefinitions } from "./commands.js";
-import { ApprovalDialog } from "./components/approval-dialog.js";
-import { Welcome } from "./components/brand.js";
-import { CommandDialog } from "./components/command-dialog.js";
-import { Composer } from "./components/composer.js";
-import { HelpDialog } from "./components/help-dialog.js";
-import { MessageList } from "./components/message-list.js";
-import { OutputDialog } from "./components/output-dialog.js";
-import { PlanPanel } from "./components/plan-panel.js";
-import { SessionsDialog } from "./components/sessions-dialog.js";
-import { SettingsDialog } from "./components/settings-dialog.js";
-import { StatusBar } from "./components/status-bar.js";
-import { StatusDialog } from "./components/status-dialog.js";
-import { ThemeDialog } from "./components/theme-dialog.js";
-import { TraceDialog } from "./components/trace-dialog.js";
-import { isActivePhase } from "./store.js";
+import { commandDefinitions, paletteDefinitions } from "./commands/definitions.js";
+import { MessageList } from "./components/conversation/message-list.js";
+import { PlanPanel } from "./components/conversation/plan-panel.js";
+import { ApprovalDialog } from "./components/dialogs/approval-dialog.js";
+import { CommandDialog } from "./components/dialogs/command-dialog.js";
+import { HelpDialog } from "./components/dialogs/help-dialog.js";
+import { OutputDialog } from "./components/dialogs/output-dialog.js";
+import { ReasoningDialog } from "./components/dialogs/reasoning-dialog.js";
+import { SessionsDialog } from "./components/dialogs/sessions-dialog.js";
+import { SettingsDialog } from "./components/dialogs/settings-dialog.js";
+import { StatusDialog } from "./components/dialogs/status-dialog.js";
+import { ThemeDialog } from "./components/dialogs/theme-dialog.js";
+import { TraceDialog } from "./components/dialogs/trace-dialog.js";
+import { Composer } from "./components/input/composer.js";
+import { Welcome } from "./components/layout/brand.js";
+import { StatusBar } from "./components/layout/status-bar.js";
+import type { AgentController } from "./runtime/agent-controller.js";
+import { isActivePhase } from "./runtime/store.js";
 import {
   applyTheme,
   DEFAULT_THEME,
@@ -31,7 +32,7 @@ import {
   THEME_PRESETS,
   type ThemePreference,
   theme,
-} from "./theme.js";
+} from "./theme/index.js";
 
 export interface TuiAppOptions {
   cwd: string;
@@ -60,6 +61,7 @@ type DialogState =
   | { type: "theme"; selected: number }
   | { type: "help" }
   | { type: "status" }
+  | { type: "reasoning" }
   | { type: "settings"; settings: ProviderSettings }
   | OutputDialogState;
 
@@ -74,7 +76,6 @@ export function TuiApp({
 }) {
   const { exit } = useApp();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
-  const [reasoningExpanded, setReasoningExpanded] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
   const [exitArmed, setExitArmed] = useState(false);
   const [commandNotice, setCommandNotice] = useState<string>();
@@ -267,7 +268,7 @@ export function TuiApp({
       return;
     }
     setCommandNotice(undefined);
-    setReasoningExpanded((current) => !current);
+    setDialog((current) => (current?.type === "reasoning" ? undefined : { type: "reasoning" }));
   };
 
   const togglePlan = () => {
@@ -349,7 +350,9 @@ export function TuiApp({
       return;
     }
     if (dialog) {
-      if (dialog.type === "output" && key.ctrl && input === "o") {
+      if (dialog.type === "reasoning" && key.ctrl && input === "r") {
+        setDialog(undefined);
+      } else if (dialog.type === "output" && key.ctrl && input === "o") {
         setDialog(undefined);
       } else if (key.escape) {
         setDialog(undefined);
@@ -412,55 +415,66 @@ export function TuiApp({
   });
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      {!state.runId && !dialog ? <Welcome cwd={options.cwd} /> : null}
+    <Box flexDirection="column">
+      {!state.runId && !dialog ? (
+        <Box paddingX={2}>
+          <Welcome cwd={options.cwd} />
+        </Box>
+      ) : null}
       <MessageList
         messages={state.messages}
         streamingText={state.streamingText}
         tools={state.tools}
         reasoningState={state}
-        reasoningExpanded={reasoningExpanded}
         provider={connectionSettings?.provider ?? options.provider}
         model={connectionSettings?.model ?? options.model}
       />
-      {!dialog ? <PlanPanel state={state} expanded={planExpanded} /> : null}
-      {dialog?.type === "sessions" ? (
-        <SessionsDialog sessions={dialog.sessions} selected={dialog.selected} />
-      ) : dialog?.type === "trace" ? (
-        <TraceDialog events={dialog.events} />
-      ) : dialog?.type === "commands" ? (
-        <CommandDialog selected={dialog.selected} />
-      ) : dialog?.type === "theme" ? (
-        <ThemeDialog selected={dialog.selected} current={activeTheme.preset} />
-      ) : dialog?.type === "help" ? (
-        <HelpDialog />
-      ) : dialog?.type === "status" ? (
-        <StatusDialog
-          state={state}
-          provider={connectionSettings?.provider ?? options.provider}
-          model={connectionSettings?.model ?? options.model}
-          cwd={options.cwd}
-          contextLimit={connectionSettings?.contextLimit ?? 100_000}
-        />
-      ) : dialog?.type === "settings" ? (
-        <SettingsDialog
-          initial={dialog.settings}
-          onSave={saveSettings}
-          onDiscover={(params) => controller.listModels(params)}
-        />
-      ) : dialog?.type === "output" ? (
-        <OutputDialog {...outputView(dialog)} />
+      {!dialog ? (
+        <Box paddingX={2}>
+          <PlanPanel state={state} expanded={planExpanded} />
+        </Box>
       ) : null}
-      {state.notice ? (
-        <Text {...(state.phase === "completed" ? { color: theme.success } : { dimColor: true })}>
-          {state.phase === "completed" ? "✓ " : ""}
-          {state.notice}
-        </Text>
-      ) : null}
-      {state.error ? <Text color={theme.error}>{state.error}</Text> : null}
-      {commandNotice ? <Text color={theme.warning}>{commandNotice}</Text> : null}
-      {exitArmed ? <Text color={theme.warning}>Press Ctrl+C again to exit.</Text> : null}
-      <Box marginTop={1}>
+      <Box flexDirection="column" paddingX={2}>
+        {dialog?.type === "sessions" ? (
+          <SessionsDialog sessions={dialog.sessions} selected={dialog.selected} />
+        ) : dialog?.type === "trace" ? (
+          <TraceDialog events={dialog.events} />
+        ) : dialog?.type === "commands" ? (
+          <CommandDialog selected={dialog.selected} />
+        ) : dialog?.type === "theme" ? (
+          <ThemeDialog selected={dialog.selected} current={activeTheme.preset} />
+        ) : dialog?.type === "help" ? (
+          <HelpDialog />
+        ) : dialog?.type === "status" ? (
+          <StatusDialog
+            state={state}
+            provider={connectionSettings?.provider ?? options.provider}
+            model={connectionSettings?.model ?? options.model}
+            cwd={options.cwd}
+            contextLimit={connectionSettings?.contextLimit ?? 100_000}
+          />
+        ) : dialog?.type === "reasoning" ? (
+          <ReasoningDialog state={state} />
+        ) : dialog?.type === "settings" ? (
+          <SettingsDialog
+            initial={dialog.settings}
+            onSave={saveSettings}
+            onDiscover={(params) => controller.listModels(params)}
+          />
+        ) : dialog?.type === "output" ? (
+          <OutputDialog {...outputView(dialog)} />
+        ) : null}
+        {state.notice ? (
+          <Text {...(state.phase === "completed" ? { color: theme.success } : { dimColor: true })}>
+            {state.phase === "completed" ? "✓ " : ""}
+            {state.notice}
+          </Text>
+        ) : null}
+        {state.error ? <Text color={theme.error}>{state.error}</Text> : null}
+        {commandNotice ? <Text color={theme.warning}>{commandNotice}</Text> : null}
+        {exitArmed ? <Text color={theme.warning}>Press Ctrl+C again to exit.</Text> : null}
+      </Box>
+      <Box>
         {dialog ? null : state.pendingApproval ? (
           <ApprovalDialog approval={state.pendingApproval} />
         ) : (

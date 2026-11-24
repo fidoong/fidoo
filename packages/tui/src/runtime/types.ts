@@ -64,6 +64,7 @@ export interface TuiState {
   streamingText: string;
   streamingBlocksStarted: boolean;
   responseActive: boolean;
+  responseStartIndex: number | undefined;
   reasoningText: string;
   reasoningActive: boolean;
   reasoningStartedAt: number | undefined;
@@ -76,7 +77,15 @@ export interface TuiState {
   verificationStatus: "running" | "passed" | "failed" | "not-required" | undefined;
   usage: { inputTokens: number; outputTokens: number };
   contextTokens: number;
-  modelActivity: { active: boolean; calls: number; durationMs: number; failures: number };
+  modelActivity: {
+    active: boolean;
+    calls: number;
+    durationMs: number;
+    failures: number;
+    iteration: number;
+    startedAt: number | undefined;
+  };
+  steeringPending: number;
   lastSeq: number;
   notice: string | undefined;
   error: string | undefined;

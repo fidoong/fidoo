@@ -7,7 +7,7 @@ import type {
 import { PROVIDER_IDS, providerDefinition } from "@fidoo/protocol";
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import { theme } from "../theme.js";
+import { theme } from "../../theme/index.js";
 
 const steps = ["Provider", "Base URL", "API key", "Model", "Confirm"] as const;
 
