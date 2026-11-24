@@ -59,6 +59,54 @@ describe("AgentLoop", () => {
     expect(await readFile(join(cwd, "value.mjs"), "utf8")).toContain("false");
   });
 
+  it("enforces required checks and attaches their real evidence to completion", async () => {
+    const { cwd, source } = await sourceFile();
+    await writeFile(join(cwd, "value.test.mjs"), 'import assert from "node:assert/strict";\n');
+    await writeFile(join(cwd, "other.test.mjs"), 'import assert from "node:assert/strict";\n');
+    const { service, store } = testRuntime(
+      [
+        assistant("Editing", [
+          call("edit-required", "edit_file", {
+            path: "value.mjs",
+            old_string: "true",
+            new_string: "false",
+            expected_revision: revisionOf(source),
+          }),
+        ]),
+        assistant("Done without checking"),
+        assistant("Running an unrelated test", [
+          call("other", "bash", { command: "node", args: ["--test", "other.test.mjs"] }),
+        ]),
+        assistant("Done with unrelated verification"),
+        assistant("Running the required test", [
+          call("required", "bash", { command: "node", args: ["--test", "value.test.mjs"] }),
+        ]),
+        assistant("Fixed"),
+      ],
+      {
+        requiredChecks: [
+          {
+            id: "unit",
+            command: "node",
+            args: ["--test", "value.test.mjs"],
+          },
+        ],
+      },
+    );
+    const state = await service.start("Fix value", cwd, new AbortController().signal);
+    expect(state.status).toBe("completed");
+    expect(state.finalSummary).toContain("unit: passed");
+    const events = await store.load(state.runId);
+    expect(events.filter((event) => event.type === "verification.requested")).toHaveLength(2);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.completed",
+      payload: {
+        verification: "passed",
+        results: [{ checkId: "unit", kind: "test", status: "passed", exitCode: 0 }],
+      },
+    });
+  });
+
   it("does not write when approval is rejected", async () => {
     const { cwd, source } = await sourceFile();
     const { service } = testRuntime(
@@ -92,6 +140,7 @@ describe("AgentLoop", () => {
       ]),
       assistant("Cannot continue", [
         call("blocked", "report_blocked", { reason: "External dependency is unavailable" }),
+        call("after-blocked", "read_file", { path: "value.mjs" }),
       ]),
     ]);
     const state = await service.start("Run a blocked task", cwd, new AbortController().signal);
@@ -102,6 +151,11 @@ describe("AgentLoop", () => {
       payload: { result: { status: "error" } },
     });
     expect(events.some((event) => event.type === "run.completed")).toBe(false);
+    expect(
+      events.some(
+        (event) => event.type === "tool.proposed" && event.payload.call.id === "after-blocked",
+      ),
+    ).toBe(false);
     expect(await store.list()).toMatchObject([{ status: "blocked" }]);
   });
 

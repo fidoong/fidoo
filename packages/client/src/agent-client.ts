@@ -1,7 +1,9 @@
 import type {
+  AgentConnectionState,
   AgentTransport,
   ApprovalRespondParams,
   ArtifactReadParams,
+  BackgroundTaskEvent,
   ProviderModelsParams,
   RunIdParams,
   RunListParams,
@@ -10,17 +12,23 @@ import type {
   RunSteerParams,
   RunSubscribeParams,
   SettingsUpdateParams,
+  TaskListParams,
+  TaskOutputParams,
+  TaskStopParams,
   WorkspaceValidateParams,
 } from "@fidoo/protocol";
 import {
   apiResultSchema,
   artifactPageSchema,
+  backgroundTaskEventSchema,
+  backgroundTaskSchema,
   providerModelsResultSchema,
   providerSettingsSchema,
   publicRunEventSchema,
   runSnapshotSchema,
   runStartResultSchema,
   runSummarySchema,
+  taskOutputPageSchema,
   workspaceValidateResultSchema,
 } from "@fidoo/protocol";
 import { z } from "zod";
@@ -31,13 +39,19 @@ export class AgentClient {
   readonly artifacts: ArtifactClient;
   readonly approval: ApprovalClient;
   readonly settings: SettingsClient;
+  readonly tasks: TaskClient;
 
-  constructor(transport: AgentTransport) {
+  constructor(private readonly transport: AgentTransport) {
     this.workspace = new WorkspaceClient(transport);
     this.run = new RunClient(transport);
     this.artifacts = new ArtifactClient(transport);
     this.approval = new ApprovalClient(transport);
     this.settings = new SettingsClient(transport);
+    this.tasks = new TaskClient(transport);
+  }
+
+  onConnectionChange(listener: (state: AgentConnectionState) => void): () => void {
+    return this.transport.onConnectionChange?.(listener) ?? (() => undefined);
   }
 }
 
@@ -114,6 +128,28 @@ class SettingsClient {
 
   async listModels(params: ProviderModelsParams) {
     return providerModelsResultSchema.parse(await this.transport.call("settings.models", params));
+  }
+}
+
+class TaskClient {
+  constructor(private readonly transport: AgentTransport) {}
+
+  async list(params: TaskListParams = {}) {
+    return z.array(backgroundTaskSchema).parse(await this.transport.call("task.list", params));
+  }
+
+  async output(params: TaskOutputParams) {
+    return taskOutputPageSchema.parse(await this.transport.call("task.output", params));
+  }
+
+  async stop(params: TaskStopParams) {
+    return backgroundTaskSchema.parse(await this.transport.call("task.stop", params));
+  }
+
+  async *subscribe(): AsyncIterable<BackgroundTaskEvent> {
+    for await (const event of this.transport.subscribe("task.subscribe", {})) {
+      yield backgroundTaskEventSchema.parse(event);
+    }
   }
 }
 

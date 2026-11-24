@@ -28,8 +28,10 @@ import { loadPermissionPolicy } from "./adapters/policy/file-policy.js";
 import { FileArtifactStore } from "./adapters/storage/file-artifact-store.js";
 import { FileEventStore } from "./adapters/storage/file-event-store.js";
 import { LocalWorkspace } from "./adapters/system/local-workspace.js";
+import { BackgroundTaskManager } from "./adapters/tasks/background-task-manager.js";
 import { createCodingTools } from "./adapters/tools/registry.js";
 import type { NodeRuntimeConfig } from "./config.js";
+import { loadRequiredChecks } from "./project-verification.js";
 
 export interface NodeRuntime {
   runService: RunService;
@@ -37,6 +39,7 @@ export interface NodeRuntime {
   eventStore: EventStore;
   artifacts: ArtifactStore;
   workspace: WorkspacePort;
+  tasks: BackgroundTaskManager;
   permission: ResolvedPermissionPolicy;
   permissionMode: PermissionMode;
 }
@@ -45,8 +48,10 @@ export async function createNodeRuntime(
   config: NodeRuntimeConfig,
   observer?: RuntimeObserver,
   approval?: ApprovalPort,
+  taskManager?: BackgroundTaskManager,
 ): Promise<NodeRuntime> {
   const instructions = await loadProjectInstructions(config.cwd);
+  const requiredChecks = await loadRequiredChecks(config.cwd);
   const permission = await loadPermissionPolicy(config);
   const permissionMode: PermissionMode = config.readOnly
     ? "read-only"
@@ -56,6 +61,7 @@ export async function createNodeRuntime(
   const eventStore = new FileEventStore(config.dataHome);
   const artifacts = new FileArtifactStore(config.dataHome);
   const workspace = new LocalWorkspace();
+  const tasks = taskManager ?? new BackgroundTaskManager(config.dataHome);
   const createService = (serviceObserver?: RuntimeObserver, serviceApproval?: ApprovalPort) =>
     new CoreRunService({
       model: createModel(config),
@@ -63,10 +69,11 @@ export async function createNodeRuntime(
       store: eventStore,
       workspace,
       artifacts,
-      tools: new ToolRegistry([updatePlanTool, ...createCodingTools()]),
+      tools: new ToolRegistry([updatePlanTool, ...createCodingTools(tasks, requiredChecks)]),
       approval: serviceApproval ?? new RejectApproval(),
       policy: new PolicyEngine(permissionMode, permission.rules),
-      systemPrompt: withProjectInstructions(instructions),
+      systemPrompt: withProjectInstructions(instructions, requiredChecks),
+      requiredChecks,
       maxIterations: config.maxIterations,
       maxContextTokens: config.maxContextTokens ?? 100_000,
       ...(serviceObserver ? { observer: serviceObserver } : {}),
@@ -77,6 +84,7 @@ export async function createNodeRuntime(
     eventStore,
     artifacts,
     workspace,
+    tasks,
     permission,
     permissionMode,
   };

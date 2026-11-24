@@ -21,3 +21,4 @@ export * from "./runtime/plan-tool.js";
 export * from "./runtime/policy-engine.js";
 export * from "./runtime/retry.js";
 export * from "./runtime/tool-registry.js";
+export * from "./runtime/tool-scheduler.js";

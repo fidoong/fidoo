@@ -3,9 +3,10 @@ import { createInterface, type Interface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import type { AgentApi } from "@fidoo/api";
 import { AgentError, errorMessage } from "@fidoo/core";
-import type { ApiMethod, JsonRpcError, PublicRunEvent } from "@fidoo/protocol";
+import type { ApiMethod, JsonRpcError, SubscriptionMethod } from "@fidoo/protocol";
 import {
   API_METHODS,
+  backgroundTaskEventSchema,
   JSON_RPC_VERSION,
   jsonRpcRequestSchema,
   PROTOCOL_VERSION,
@@ -16,6 +17,7 @@ import { ZodError } from "zod";
 
 interface Subscription {
   iterator: AsyncIterator<unknown>;
+  method: SubscriptionMethod;
 }
 
 export class StdioServer {
@@ -97,10 +99,10 @@ export class StdioServer {
       this.sendError(request.requestId, rpcError(-32600, "Duplicate requestId"));
       return;
     }
-    if (request.method === "run.subscribe") {
+    if (request.method === "run.subscribe" || request.method === "task.subscribe") {
       this.activeRequests.add(request.requestId);
       try {
-        await this.openSubscription(request.requestId, request.params);
+        await this.openSubscription(request.requestId, request.method, request.params);
       } catch (error) {
         this.sendError(request.requestId, requestError(error));
       } finally {
@@ -114,7 +116,11 @@ export class StdioServer {
     }
     this.activeRequests.add(request.requestId);
     try {
-      const result = await this.api.call(request.method as ApiMethod, request.params ?? {});
+      const result = await this.api.call(
+        request.method as ApiMethod,
+        request.params ?? {},
+        request.requestId,
+      );
       this.send({
         jsonrpc: JSON_RPC_VERSION,
         protocolVersion: PROTOCOL_VERSION,
@@ -128,17 +134,21 @@ export class StdioServer {
     }
   }
 
-  private async openSubscription(requestId: string, params: unknown): Promise<void> {
+  private async openSubscription(
+    requestId: string,
+    method: SubscriptionMethod,
+    params: unknown,
+  ): Promise<void> {
     const subscriptionId = randomUUID();
-    const iterator = this.api.subscribe(params)[Symbol.asyncIterator]();
-    this.subscriptions.set(subscriptionId, { iterator });
+    const iterator = this.api.subscribe(method, params)[Symbol.asyncIterator]();
+    this.subscriptions.set(subscriptionId, { iterator, method });
     this.send({
       jsonrpc: JSON_RPC_VERSION,
       protocolVersion: PROTOCOL_VERSION,
       requestId,
       result: { subscriptionId },
     });
-    const task = this.pumpSubscription(subscriptionId, iterator).finally(() =>
+    const task = this.pumpSubscription(subscriptionId, iterator, method).finally(() =>
       this.tasks.delete(task),
     );
     this.tasks.add(task);
@@ -147,6 +157,7 @@ export class StdioServer {
   private async pumpSubscription(
     subscriptionId: string,
     iterator: AsyncIterator<unknown>,
+    method: SubscriptionMethod,
   ): Promise<void> {
     let error: JsonRpcError | undefined;
     try {
@@ -155,11 +166,14 @@ export class StdioServer {
         if (next.done) {
           break;
         }
-        const event: PublicRunEvent = publicRunEventSchema.parse(next.value);
+        const event =
+          method === "run.subscribe"
+            ? publicRunEventSchema.parse(next.value)
+            : backgroundTaskEventSchema.parse(next.value);
         this.send({
           jsonrpc: JSON_RPC_VERSION,
           protocolVersion: PROTOCOL_VERSION,
-          method: "run.event",
+          method: method === "run.subscribe" ? "run.event" : "task.event",
           params: { subscriptionId, event },
         });
       }

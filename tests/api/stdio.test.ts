@@ -141,6 +141,62 @@ describe("stdio Agent API", () => {
     expect(new Set(replayed.map((event) => event.eventId)).size).toBe(replayed.length);
   });
 
+  it("returns the original result when a start request is retried", async () => {
+    const cwd = await workspace();
+    const { input, output, store, close } = rawServer();
+    const lines = createInterface({ input: output });
+    const iterator = lines[Symbol.asyncIterator]();
+    cleanups.push(async () => {
+      lines.close();
+      await close();
+    });
+    const request = {
+      jsonrpc: JSON_RPC_VERSION,
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: "idempotent-start",
+      method: "run.start",
+      params: { task: "Create one run", cwd },
+    };
+    input.write(`${JSON.stringify(request)}\n`);
+    const first = await nextLine(iterator);
+    input.write(`${JSON.stringify(request)}\n`);
+    const retried = await nextLine(iterator);
+    expect(retried).toEqual(first);
+    expect(await store.list()).toHaveLength(1);
+
+    input.write(`${JSON.stringify({ ...request, params: { task: "Different task", cwd } })}\n`);
+    await expect(nextLine(iterator)).resolves.toMatchObject({
+      requestId: "idempotent-start",
+      error: { data: { agentCode: "configuration" } },
+    });
+  });
+
+  it("streams background task notifications and reads task output", async () => {
+    const cwd = await workspace();
+    const { client, tasks } = stdioApi([]);
+    const iterator = client.tasks.subscribe()[Symbol.asyncIterator]();
+    const started = iterator.next();
+    const task = await tasks.start({
+      runId: "run-background",
+      command: process.execPath,
+      args: ["-e", "process.stdout.write('background over stdio')"],
+      cwd,
+    });
+    expect(await started).toMatchObject({
+      done: false,
+      value: { type: "task.started", task: { taskId: task.taskId } },
+    });
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: "task.finished", task: { taskId: task.taskId, status: "exited" } },
+    });
+    expect(await client.tasks.list({ runId: "run-background" })).toHaveLength(1);
+    expect((await client.tasks.output({ taskId: task.taskId })).content).toContain(
+      "background over stdio",
+    );
+    await iterator.return?.();
+  });
+
   it("reads artifact pages through the same stdio connection", async () => {
     const { client, artifacts } = stdioApi([assistant("Unused")]);
     const saved = await artifacts.save("run-artifact", "output.txt", "one\ntwo\nthree");

@@ -10,10 +10,14 @@ import type {
 import { AgentError, createEvent, errorMessage, replayRun } from "@fidoo/core";
 import type {
   ApiMethod,
+  BackgroundTask,
+  BackgroundTaskEvent,
   ProviderModelsParams,
   ProviderSettings,
   PublicRunEvent,
   SettingsUpdateParams,
+  SubscriptionMethod,
+  TaskOutputPage,
 } from "@fidoo/protocol";
 import {
   approvalRespondParamsSchema,
@@ -26,6 +30,9 @@ import {
   runStartParamsSchema,
   runSteerParamsSchema,
   runSubscribeParamsSchema,
+  taskListParamsSchema,
+  taskOutputParamsSchema,
+  taskStopParamsSchema,
   workspaceValidateParamsSchema,
 } from "@fidoo/protocol";
 import { ApprovalBroker } from "./approval-broker.js";
@@ -36,7 +43,11 @@ import {
   toPublicSnapshot,
   toPublicSummary,
   toReasoningDelta,
+  toToolOutputDelta,
 } from "./event-mapper.js";
+import { RequestResultCache } from "./request-result-cache.js";
+import { RunCommandQueue } from "./run-command-queue.js";
+import { TaskHub } from "./task-hub.js";
 
 export interface AgentSettingsPort {
   getSettings(): ProviderSettings;
@@ -47,17 +58,28 @@ export interface AgentSettingsPort {
   listModels(params: ProviderModelsParams): Promise<{ models: string[]; unavailable?: boolean }>;
 }
 
+export interface AgentTaskPort {
+  list(runId?: string): Promise<BackgroundTask[]>;
+  stop(taskId: string): Promise<BackgroundTask>;
+  readOutput(taskId: string, offset: number, limit: number): Promise<TaskOutputPage>;
+  onEvent(listener: (event: BackgroundTaskEvent) => void): () => void;
+}
+
 export interface AgentApiOptions {
   createRunService(observer: RuntimeObserver, approval: ApprovalPort): RunService;
   eventStore: EventStore;
   artifacts: ArtifactStore;
   workspace: WorkspacePort;
+  tasks?: AgentTaskPort;
   settings?: AgentSettingsPort;
 }
 
 export class AgentApi {
   private readonly hub = new EventHub();
+  private readonly taskHub = new TaskHub();
   private readonly approval = new ApprovalBroker();
+  private readonly commands = new RunCommandQueue();
+  private readonly requestResults = new RequestResultCache();
   private runService: RunService;
   private readonly observer: RuntimeObserver;
   private readonly active = new Map<string, AbortController>();
@@ -72,22 +94,26 @@ export class AgentApi {
       onReasoningDelta: (text, runId) => {
         this.hub.publishTransient(toReasoningDelta(runId, this.hub.sequence(runId), text));
       },
+      onToolOutputDelta: (runId, callId, text) => {
+        this.hub.publishTransient(toToolOutputDelta(runId, this.hub.sequence(runId), callId, text));
+      },
     };
     this.runService = options.createRunService(this.observer, this.approval);
+    this.options.tasks?.onEvent((event) => this.taskHub.publish(event));
   }
 
-  async call(method: ApiMethod, params: unknown): Promise<unknown> {
+  async call(method: ApiMethod, params: unknown, requestId?: string): Promise<unknown> {
     switch (method) {
       case "workspace.validate":
         return this.validateWorkspace(params);
       case "run.start":
-        return this.start(params);
+        return this.requestResults.run(method, requestId, params, () => this.start(params));
       case "run.resume":
-        return this.resume(params);
+        return this.requestResults.run(method, requestId, params, () => this.resume(params));
       case "run.steer":
-        return this.steer(params);
+        return this.requestResults.run(method, requestId, params, () => this.steer(params));
       case "run.cancel":
-        return this.cancel(params);
+        return this.requestResults.run(method, requestId, params, () => this.cancel(params));
       case "run.get":
         return this.get(params);
       case "run.list":
@@ -103,15 +129,23 @@ export class AgentApi {
       case "settings.models":
         return this.listModels(params);
       case "approval.respond":
-        return this.respond(params);
+        return this.requestResults.run(method, requestId, params, () => this.respond(params));
+      case "task.list":
+        return this.listTasks(params);
+      case "task.output":
+        return this.readTaskOutput(params);
+      case "task.stop":
+        return this.stopTask(params);
       case "run.subscribe":
-        throw new AgentError("run.subscribe must use the subscription transport", "configuration");
+      case "task.subscribe":
+        throw new AgentError(`${method} must use the subscription transport`, "configuration");
       default:
         throw new AgentError(`Unknown API method: ${String(method)}`, "configuration");
     }
   }
 
-  subscribe(params: unknown): AsyncIterable<unknown> {
+  subscribe(method: SubscriptionMethod, params: unknown): AsyncIterable<unknown> {
+    if (method === "task.subscribe") return this.taskHub.subscribe();
     const input = runSubscribeParamsSchema.parse(params);
     const stream = new PublicEventStream();
     return {
@@ -201,27 +235,29 @@ export class AgentApi {
   private async start(params: unknown) {
     this.assertConfigured();
     const input = runStartParamsSchema.parse(params);
-    await this.options.workspace.assertDirectory(input.cwd);
     const runId = randomUUID();
-    const controller = new AbortController();
-    this.active.set(runId, controller);
-    const execution = this.runService.start(input.task, input.cwd, controller.signal, runId);
-    this.executions.set(runId, execution);
-    void execution
-      .catch(() => undefined)
-      .finally(() => this.clearExecution(runId, controller, execution));
-    await Promise.race([
-      this.waitForRunStart(runId),
-      execution.then(
-        () => {
-          throw new AgentError("Run ended before its start event was visible", "storage");
-        },
-        (error) => {
-          throw error;
-        },
-      ),
-    ]);
-    return { runId };
+    return this.commands.run(runId, async () => {
+      await this.options.workspace.assertDirectory(input.cwd);
+      const controller = new AbortController();
+      this.active.set(runId, controller);
+      const execution = this.runService.start(input.task, input.cwd, controller.signal, runId);
+      this.executions.set(runId, execution);
+      void execution
+        .catch(() => undefined)
+        .finally(() => this.clearExecution(runId, controller, execution));
+      await Promise.race([
+        this.waitForRunStart(runId),
+        execution.then(
+          () => {
+            throw new AgentError("Run ended before its start event was visible", "storage");
+          },
+          (error) => {
+            throw error;
+          },
+        ),
+      ]);
+      return { runId };
+    });
   }
 
   private async recordBackgroundError(runId: string, error: unknown): Promise<void> {
@@ -263,41 +299,47 @@ export class AgentApi {
   private async resume(params: unknown) {
     this.assertConfigured();
     const input = runResumeParamsSchema.parse(params);
-    if (this.active.has(input.runId)) {
-      throw new AgentError(`Run is already active: ${input.runId}`, "configuration");
-    }
-    const state = replayRun(input.runId, await this.options.eventStore.load(input.runId));
-    await this.options.workspace.assertDirectory(state.cwd);
-    const controller = new AbortController();
-    this.active.set(input.runId, controller);
-    const execution = this.runService.resume(input.runId, input.task, controller.signal);
-    this.executions.set(input.runId, execution);
-    void execution
-      .catch((error) => this.recordBackgroundError(input.runId, error))
-      .finally(() => this.clearExecution(input.runId, controller, execution));
-    return { ok: true as const };
+    return this.commands.run(input.runId, async () => {
+      if (this.active.has(input.runId)) {
+        throw new AgentError(`Run is already active: ${input.runId}`, "configuration");
+      }
+      const state = replayRun(input.runId, await this.options.eventStore.load(input.runId));
+      await this.options.workspace.assertDirectory(state.cwd);
+      const controller = new AbortController();
+      this.active.set(input.runId, controller);
+      const execution = this.runService.resume(input.runId, input.task, controller.signal);
+      this.executions.set(input.runId, execution);
+      void execution
+        .catch((error) => this.recordBackgroundError(input.runId, error))
+        .finally(() => this.clearExecution(input.runId, controller, execution));
+      return { ok: true as const };
+    });
   }
 
   private async steer(params: unknown) {
     const input = runSteerParamsSchema.parse(params);
-    if (!this.active.has(input.runId)) {
-      throw new AgentError("Run is not active; resume it before steering", "configuration");
-    }
-    await this.runService.steer(input.runId, input.task);
-    return { ok: true as const };
+    return this.commands.run(input.runId, async () => {
+      if (!this.active.has(input.runId)) {
+        throw new AgentError("Run is not active; resume it before steering", "configuration");
+      }
+      await this.runService.steer(input.runId, input.task);
+      return { ok: true as const };
+    });
   }
 
   private async cancel(params: unknown) {
     const input = runIdParamsSchema.parse(params);
-    const controller = this.active.get(input.runId);
-    if (controller) {
-      controller.abort();
-      await this.executions.get(input.runId);
-      return toPublicSnapshot(
-        replayRun(input.runId, await this.options.eventStore.load(input.runId)),
-      );
-    }
-    return toPublicSnapshot(await this.runService.cancel(input.runId));
+    return this.commands.run(input.runId, async () => {
+      const controller = this.active.get(input.runId);
+      if (controller) {
+        controller.abort();
+        await this.executions.get(input.runId);
+        return toPublicSnapshot(
+          replayRun(input.runId, await this.options.eventStore.load(input.runId)),
+        );
+      }
+      return toPublicSnapshot(await this.runService.cancel(input.runId));
+    });
   }
 
   private clearExecution(
@@ -333,9 +375,34 @@ export class AgentApi {
     return this.options.artifacts.read(input.runId, input.artifactId, input.offset, input.limit);
   }
 
+  private async listTasks(params: unknown) {
+    const input = taskListParamsSchema.parse(params);
+    return this.taskPort().list(input.runId);
+  }
+
+  private async readTaskOutput(params: unknown) {
+    const input = taskOutputParamsSchema.parse(params);
+    return this.taskPort().readOutput(input.taskId, input.offset, input.limit);
+  }
+
+  private async stopTask(params: unknown) {
+    const input = taskStopParamsSchema.parse(params);
+    return this.taskPort().stop(input.taskId);
+  }
+
+  private taskPort(): AgentTaskPort {
+    if (!this.options.tasks) {
+      throw new AgentError("Background tasks are not available", "configuration");
+    }
+    return this.options.tasks;
+  }
+
   private respond(params: unknown) {
-    this.approval.respond(approvalRespondParamsSchema.parse(params));
-    return { ok: true as const };
+    const input = approvalRespondParamsSchema.parse(params);
+    return this.commands.run(input.runId, () => {
+      this.approval.respond(input);
+      return { ok: true as const };
+    });
   }
 
   private getSettings() {

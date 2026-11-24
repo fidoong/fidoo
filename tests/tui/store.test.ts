@@ -220,6 +220,27 @@ describe("TUI event projection", () => {
     expect(state.notice).not.toContain("##");
   });
 
+  it("appends transient tool output without advancing the persistent sequence", () => {
+    let state = initialTuiState();
+    state = applyRunEvent(
+      state,
+      event(1, "tool.proposed", {
+        call: { id: "build", name: "bash", arguments: '{"command":"pnpm","args":["build"]}' },
+      }),
+    );
+    state = applyRunEvent(state, event(2, "tool.started", { callId: "build" }));
+    state = applyRunEvent(
+      state,
+      event(2, "tool.output.delta", { callId: "build", text: "first " }),
+    );
+    state = applyRunEvent(
+      state,
+      event(2, "tool.output.delta", { callId: "build", text: "second" }),
+    );
+    expect(state.tools[0]?.output).toBe("first second");
+    expect(state.lastSeq).toBe(2);
+  });
+
   it("renders blocked as a terminal state and clears pending approval", () => {
     let state = initialTuiState();
     state = applyRunEvent(state, event(1, "run.started", { task: "Deploy", cwd: "/workspace" }));

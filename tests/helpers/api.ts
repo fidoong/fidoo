@@ -9,6 +9,7 @@ import {
   updatePlanTool,
 } from "@fidoo/core";
 import {
+  BackgroundTaskManager,
   createCodingTools,
   LocalWorkspace,
   MemoryArtifactStore,
@@ -24,6 +25,7 @@ export function testApi(
   const store = new MemoryEventStore();
   const artifacts = new MemoryArtifactStore();
   const workspace = new LocalWorkspace();
+  const tasks = new BackgroundTaskManager();
   const model = new FakeModel(responses);
   const api = new AgentApi({
     createRunService(observer, approval) {
@@ -33,7 +35,7 @@ export function testApi(
         store,
         workspace,
         artifacts,
-        tools: new ToolRegistry([updatePlanTool, ...createCodingTools()]),
+        tools: new ToolRegistry([updatePlanTool, ...createCodingTools(tasks)]),
         approval: approval ?? approveAll,
         policy: new PolicyEngine(options.permission ?? "auto"),
         systemPrompt: BASE_SYSTEM_PROMPT,
@@ -44,7 +46,8 @@ export function testApi(
     eventStore: store,
     artifacts,
     workspace,
+    tasks,
   });
   const client = createAgentClient(new InProcessTransport(api));
-  return { api, client, store, artifacts, model };
+  return { api, client, store, artifacts, model, tasks };
 }

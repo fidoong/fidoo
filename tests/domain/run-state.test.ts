@@ -1,5 +1,5 @@
 import type { EventPayload, EventType } from "@fidoo/core";
-import { createEvent, needsVerification, replayRun } from "@fidoo/core";
+import { createEvent, needsVerification, replayRun, verificationReport } from "@fidoo/core";
 import { describe, expect, it } from "vitest";
 
 function event<Type extends EventType>(seq: number, type: Type, payload: EventPayload<Type>) {
@@ -37,7 +37,13 @@ describe("canonical trajectory", () => {
           name: "bash",
           status: "success",
           content: "passed",
-          verification: { command: "pnpm test", exitCode: 0 },
+          verification: {
+            command: "pnpm test",
+            exitCode: 0,
+            kind: "test",
+            status: "passed",
+            durationMs: 10,
+          },
         },
       }),
     ];
@@ -56,7 +62,13 @@ describe("canonical trajectory", () => {
           name: "bash",
           status: "success",
           content: "passed",
-          verification: { command: "node --test", exitCode: 0 },
+          verification: {
+            command: "node --test",
+            exitCode: 0,
+            kind: "test",
+            status: "passed",
+            durationMs: 10,
+          },
         },
       }),
       event(3, "tool.result", {
@@ -70,6 +82,143 @@ describe("canonical trajectory", () => {
       }),
     ]);
     expect(needsVerification(state)).toBe(true);
+  });
+
+  it("uses the latest verification result instead of an earlier pass", () => {
+    const state = replayRun("run-1", [
+      event(1, "run.started", { task: "Fix", cwd: "/workspace" }),
+      event(2, "tool.result", {
+        result: {
+          callId: "edit",
+          name: "edit_file",
+          status: "success",
+          content: "edited",
+          changedFiles: ["a.ts"],
+        },
+      }),
+      event(3, "tool.result", {
+        result: {
+          callId: "pass",
+          name: "bash",
+          status: "success",
+          content: "passed",
+          verification: {
+            command: "node --test",
+            exitCode: 0,
+            kind: "test",
+            status: "passed",
+            durationMs: 10,
+          },
+        },
+      }),
+      event(4, "tool.result", {
+        result: {
+          callId: "fail",
+          name: "bash",
+          status: "error",
+          content: "failed",
+          verification: {
+            command: "node --test",
+            exitCode: 1,
+            kind: "test",
+            status: "failed",
+            durationMs: 12,
+            failure: "test",
+          },
+        },
+      }),
+    ]);
+    expect(needsVerification(state)).toBe(true);
+  });
+
+  it("requires every scoped project check after the latest mutation", () => {
+    const requiredChecks = [
+      {
+        id: "unit",
+        command: "node",
+        args: ["--test", "unit.test.mjs"],
+        paths: ["src/**"],
+      },
+      {
+        id: "types",
+        command: "pnpm",
+        args: ["typecheck"],
+        paths: ["src/**"],
+      },
+    ];
+    const state = replayRun("run-1", [
+      event(1, "run.started", { task: "Fix", cwd: "/workspace" }),
+      event(2, "tool.result", {
+        result: {
+          callId: "edit",
+          name: "edit_file",
+          status: "success",
+          content: "edited",
+          changedFiles: ["src/a.ts"],
+        },
+      }),
+      event(3, "tool.result", {
+        result: {
+          callId: "unrelated",
+          name: "bash",
+          status: "success",
+          content: "passed",
+          verification: {
+            command: "node --test other.test.mjs",
+            exitCode: 0,
+            kind: "test",
+            status: "passed",
+            durationMs: 10,
+          },
+        },
+      }),
+      event(4, "tool.result", {
+        result: {
+          callId: "unit",
+          name: "bash",
+          status: "success",
+          content: "passed",
+          verification: {
+            command: '"node" "--test" "unit.test.mjs"',
+            args: ["--test", "unit.test.mjs"],
+            checkId: "unit",
+            exitCode: 0,
+            kind: "test",
+            status: "passed",
+            durationMs: 10,
+          },
+        },
+      }),
+    ]);
+    expect(
+      verificationReport(state, requiredChecks).pendingChecks.map((check) => check.id),
+    ).toEqual(["types"]);
+    expect(needsVerification(state, requiredChecks)).toBe(true);
+  });
+
+  it("skips scoped checks when their files did not change", () => {
+    const state = replayRun("run-1", [
+      event(1, "run.started", { task: "Docs", cwd: "/workspace" }),
+      event(2, "tool.result", {
+        result: {
+          callId: "edit",
+          name: "edit_file",
+          status: "success",
+          content: "edited",
+          changedFiles: ["docs/usage.md"],
+        },
+      }),
+    ]);
+    expect(
+      needsVerification(state, [
+        {
+          id: "unit",
+          command: "node",
+          args: ["--test"],
+          paths: ["src/**"],
+        },
+      ]),
+    ).toBe(false);
   });
 
   it("rejects a broken event sequence", () => {

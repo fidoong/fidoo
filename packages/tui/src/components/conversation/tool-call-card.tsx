@@ -54,6 +54,11 @@ export const ToolCallCard = memo(function ToolCallCard({
         </Text>
       ) : null}
       {diff ? <DiffView source={diff} expanded={expanded} /> : null}
+      {tool.status === "running" && tool.name === "bash" && tool.output ? (
+        <Box marginLeft={2}>
+          <CodeBlock code={lastLines(tool.output, 6)} language="text" />
+        </Box>
+      ) : null}
       {expanded && !diff && tool.output ? (
         <CodeBlock code={limit(tool.output, 200)} language="text" />
       ) : null}
@@ -149,6 +154,13 @@ function formatToolBreakdown(tools: ToolCard[]): string {
 function formatDuration(milliseconds: number): string {
   if (milliseconds < 1000) return `${milliseconds}ms`;
   return `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)}s`;
+}
+
+function lastLines(source: string, count: number): string {
+  return source
+    .split(/\r\n|\r|\n/)
+    .slice(-count)
+    .join("\n");
 }
 
 function limit(source: string, lines: number): string {

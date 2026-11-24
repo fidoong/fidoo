@@ -20,6 +20,7 @@ export const PUBLIC_RUN_EVENT_TYPES = [
   "tool.approval_required",
   "tool.decided",
   "tool.started",
+  "tool.output.delta",
   "tool.result",
   "verification.requested",
   "verification.finished",
@@ -47,6 +48,7 @@ export type PublicRunEvent = z.infer<typeof publicRunEventSchema>;
 export const TRANSIENT_RUN_EVENT_TYPES = [
   "message.assistant.delta",
   "message.reasoning.delta",
+  "tool.output.delta",
 ] as const;
 
 export function isTransientRunEvent(event: PublicRunEvent): boolean {

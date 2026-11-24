@@ -1,6 +1,6 @@
 import { createInterface, type Interface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import type { AgentTransport, ApiMethod, JsonRpcError } from "@fidoo/protocol";
+import type { AgentTransport, ApiMethod, JsonRpcError, SubscriptionMethod } from "@fidoo/protocol";
 import {
   JSON_RPC_VERSION,
   jsonRpcResponseSchema,
@@ -8,6 +8,7 @@ import {
   runEndNotificationSchema,
   runEventNotificationSchema,
   runSubscribeResultSchema,
+  taskEventNotificationSchema,
 } from "@fidoo/protocol";
 
 interface PendingRequest {
@@ -54,11 +55,11 @@ export class StdioTransport implements AgentTransport {
     void this.readMessages();
   }
 
-  call(method: ApiMethod, params: unknown): Promise<unknown> {
-    return this.request(method, params);
+  call(method: ApiMethod, params: unknown, requestId?: string): Promise<unknown> {
+    return this.request(method, params, undefined, requestId);
   }
 
-  subscribe(method: "run.subscribe", params: unknown): AsyncIterable<unknown> {
+  subscribe(method: SubscriptionMethod, params: unknown): AsyncIterable<unknown> {
     const transport = this;
     return {
       async *[Symbol.asyncIterator]() {
@@ -117,11 +118,11 @@ export class StdioTransport implements AgentTransport {
     method: ApiMethod,
     params: unknown,
     onResult?: (result: unknown) => void,
+    requestId = `req-${++this.nextRequestId}`,
   ): Promise<unknown> {
     if (this.closed) {
       return Promise.reject(this.closeError);
     }
-    const requestId = `req-${++this.nextRequestId}`;
     return new Promise((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject, ...(onResult ? { onResult } : {}) });
       try {
@@ -169,6 +170,11 @@ export class StdioTransport implements AgentTransport {
     const event = runEventNotificationSchema.safeParse(message);
     if (event.success) {
       this.subscriptions.get(event.data.params.subscriptionId)?.push(event.data.params.event);
+      return;
+    }
+    const task = taskEventNotificationSchema.safeParse(message);
+    if (task.success) {
+      this.subscriptions.get(task.data.params.subscriptionId)?.push(task.data.params.event);
       return;
     }
     const end = runEndNotificationSchema.safeParse(message);

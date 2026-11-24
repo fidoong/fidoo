@@ -6,7 +6,9 @@ import { createEvent } from "../domain/events.js";
 import type { AssistantMessage, ToolCall, ToolObservation } from "../domain/messages.js";
 import type { TaskPlanUpdate } from "../domain/plan.js";
 import type { RunState } from "../domain/run-state.js";
-import { needsVerification, reduceEvent, replayRun } from "../domain/run-state.js";
+import { reduceEvent, replayRun, verificationReport } from "../domain/run-state.js";
+import type { RequiredCheck } from "../domain/verification.js";
+import { formatCommand, formatVerificationEvidence } from "../domain/verification.js";
 import type { ApprovalPort } from "../ports/approval.js";
 import type { ArtifactStore } from "../ports/artifacts.js";
 import type { EventStore } from "../ports/event-store.js";
@@ -14,11 +16,13 @@ import type { ModelPort } from "../ports/model.js";
 import { LoopDetector } from "../runtime/loop-detector.js";
 import type { PolicyEngine } from "../runtime/policy-engine.js";
 import type { ToolRegistry } from "../runtime/tool-registry.js";
+import { ToolScheduler } from "../runtime/tool-scheduler.js";
 
 export interface RuntimeObserver {
   onEvent?(event: AgentEvent): void | Promise<void>;
   onTextDelta?(text: string, runId: string): void;
   onReasoningDelta?(text: string, runId: string): void;
+  onToolOutputDelta?(runId: string, callId: string, text: string): void;
 }
 
 export interface AgentLoopOptions {
@@ -33,10 +37,12 @@ export interface AgentLoopOptions {
   observer?: RuntimeObserver;
   maxIterations?: number;
   maxContextTokens?: number;
+  requiredChecks?: readonly RequiredCheck[];
 }
 
 export class AgentLoop {
   private readonly loops = new LoopDetector();
+  private readonly scheduler = new ToolScheduler();
   private sequence = 0;
   private steeringVersion = 0;
   private appendChain: Promise<void> = Promise.resolve();
@@ -76,11 +82,17 @@ export class AgentLoop {
           }
           continue;
         }
-        for (const call of assistant.toolCalls) {
-          await this.executeCall(call, signal);
-          if (this.isBlocked()) {
-            return this.state;
-          }
+        const executions = assistant.toolCalls.map((call) => {
+          const concurrency = this.options.tools.get(call.name)?.concurrency ?? "exclusive";
+          return this.scheduler.schedule(concurrency, () => this.executeCall(call, signal));
+        });
+        const results = await Promise.allSettled(executions);
+        const rejected = results.find(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        );
+        if (rejected) throw rejected.reason;
+        if (this.isBlocked()) {
+          return this.state;
         }
         await this.flushSteering();
       }
@@ -196,38 +208,57 @@ export class AgentLoop {
     if (this.steeringVersion !== steeringAtStart) {
       return false;
     }
-    if (needsVerification(this.state)) {
+    const report = verificationReport(this.state, this.options.requiredChecks);
+    if (!report.passed) {
       const attempt = this.state.verificationAttempts + 1;
       if (attempt > 2) {
+        const missing = report.pendingChecks.map((check) => check.id).join(", ");
         await this.append("run.failed", {
-          error: "Code changed but no successful verification command was recorded",
+          error: missing
+            ? `Required checks did not pass after the latest mutation: ${missing}`
+            : "Code changed but the latest verification command did not pass",
           recoverable: true,
         });
         return true;
       }
+      const required = report.pendingChecks.map(
+        (check) => `${check.id}: ${formatCommand(check.command, check.args)}`,
+      );
       await this.append("verification.requested", {
         attempt,
-        reason:
-          "Harness completion check: code changed without a later successful verification command. Run the smallest relevant test, typecheck, lint, or build now. Do not give a final response until it passes; if no check exists, add or identify a concrete executable check.",
+        reason: required.length
+          ? `Harness completion check: run these required checks now and do not finish until each latest result passes: ${required.join("; ")}. Cite their real results in the final response.`
+          : "Harness completion check: code changed without a later successful verification command, or the latest verification failed. Run the smallest relevant test, typecheck, lint, or build now. Do not give a final response until it passes; if no check exists, add or identify a concrete executable check.",
       });
       return false;
     }
-    const evidence =
-      this.state.lastVerificationSeq > 0
-        ? "verified command exit code 0"
-        : "no code verification required";
-    await this.append("verification.finished", { success: true, evidence });
+    const results = report.evidence.map((item) => ({ ...item }));
+    const evidence = results.length
+      ? results.map(formatVerificationEvidence).join("; ")
+      : "no code verification required";
+    await this.append("verification.finished", {
+      success: true,
+      evidence,
+      ...(results.length ? { results } : {}),
+    });
     if (this.steeringVersion !== steeringAtStart) {
       return false;
     }
+    const content = assistant.content || "Task completed";
+    const summary =
+      results.length && !results.every((item) => content.includes(item.command))
+        ? `${content}\n\nVerification: ${evidence}`
+        : content;
     await this.append("run.completed", {
-      summary: assistant.content || "Task completed",
-      verification: this.state.lastVerificationSeq > 0 ? "passed" : "not-required",
+      summary,
+      verification: report.required ? "passed" : "not-required",
+      ...(results.length ? { results } : {}),
     });
     return true;
   }
 
   private async executeCall(call: ToolCall, signal: AbortSignal): Promise<void> {
+    if (this.isBlocked()) return;
     await this.append("tool.proposed", { call });
     const repeated = this.loops.record(call);
     if (repeated) {
@@ -295,6 +326,7 @@ export class AgentLoop {
         cwd: this.state.cwd,
         signal,
         artifacts: this.options.artifacts,
+        onOutput: (text) => this.options.observer?.onToolOutputDelta?.(this.runId, call.id, text),
       });
       await this.append("tool.result", {
         result: {

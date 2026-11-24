@@ -13,11 +13,20 @@ export const API_METHODS = [
   "settings.update",
   "settings.models",
   "approval.respond",
+  "task.list",
+  "task.output",
+  "task.stop",
+  "task.subscribe",
 ] as const;
+
+export type SubscriptionMethod = "run.subscribe" | "task.subscribe";
 
 export type ApiMethod = (typeof API_METHODS)[number];
 
+export type AgentConnectionState = "connected" | "reconnecting" | "closed";
+
 export interface AgentTransport {
   call(method: ApiMethod, params: unknown): Promise<unknown>;
-  subscribe(method: "run.subscribe", params: unknown): AsyncIterable<unknown>;
+  subscribe(method: SubscriptionMethod, params: unknown): AsyncIterable<unknown>;
+  onConnectionChange?(listener: (state: AgentConnectionState) => void): () => void;
 }

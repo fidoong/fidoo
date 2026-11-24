@@ -1,4 +1,4 @@
-import type { ArtifactReference } from "@fidoo/protocol";
+import type { ArtifactReference, BackgroundTask } from "@fidoo/protocol";
 
 export type TuiPhase =
   | "idle"
@@ -86,6 +86,7 @@ export interface TuiState {
     startedAt: number | undefined;
   };
   steeringPending: number;
+  backgroundTasks: BackgroundTask[];
   lastSeq: number;
   notice: string | undefined;
   error: string | undefined;

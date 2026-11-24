@@ -18,6 +18,7 @@ export function StatusBar({
   contextLimit?: number;
 }) {
   const files = state.changedFiles.length;
+  const runningTasks = state.backgroundTasks.filter((task) => task.status === "running").length;
   const compact = useTerminalColumns() < 72;
   const contextPercent = Math.round((state.contextTokens / contextLimit) * 100);
   const [now, setNow] = useState(Date.now());
@@ -37,6 +38,7 @@ export function StatusBar({
           {" "}
           · {state.runId ? state.runId.slice(0, 8) : "new session"} · {files}{" "}
           {files === 1 ? "file" : "files"}
+          {runningTasks > 0 ? ` · ${runningTasks} ${runningTasks === 1 ? "task" : "tasks"}` : ""}
         </Text>
       </Text>
       <Box marginLeft={compact ? 0 : 2} marginTop={compact ? 1 : 0}>

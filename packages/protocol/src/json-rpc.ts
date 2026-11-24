@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PROTOCOL_VERSION, publicRunEventSchema } from "./events.js";
+import { backgroundTaskEventSchema } from "./tasks.js";
 
 export const JSON_RPC_VERSION = "2.0" as const;
 
@@ -54,6 +55,16 @@ export const runEventNotificationSchema = z.object({
   }),
 });
 export type RunEventNotification = z.infer<typeof runEventNotificationSchema>;
+
+export const taskEventNotificationSchema = z.object({
+  ...envelope,
+  method: z.literal("task.event"),
+  params: z.object({
+    subscriptionId: z.string().min(1),
+    event: backgroundTaskEventSchema,
+  }),
+});
+export type TaskEventNotification = z.infer<typeof taskEventNotificationSchema>;
 
 export const runEndNotificationSchema = z.object({
   ...envelope,

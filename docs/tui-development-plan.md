@@ -218,6 +218,8 @@ TUI 包只负责主题解析与应用；CLI 负责配置文件读写，避免把
 - 上下文超过预算时按完整消息单元裁剪旧历史，assistant 工具调用与对应 tool results 必须一起保留或移除；持久 `context.compacted` 保存摘要、保留数量及估算前后 token，RunState 重放后得到相同上下文。原始任务、真实计划、最近完整轮次和 harness 状态优先保留；固定系统/工具/最新调用链本身超过预算时仍会明确失败。
 - `run.completed.summary` 不再作为纯文本 notice 重复输出；Agent 消息是唯一 Markdown 正文，完成通知只保留简短验证状态。
 - Agent 正文使用 marked token 流式 Markdown 渲染，支持标题、粗体、列表、链接、引用、表格和代码块；代码与 Bash 命令使用独立高亮组件。
+- Bash stdout/stderr 通过临时 `tool.output.delta` 事件实时显示最近 6 行，不写入事件库；最终完整输出仍按 Artifact 边界保存和分页查看。
+- 后台命令通过独立 `task.list/output/stop/subscribe` API 管理，任务元数据和输出持久化；TUI 使用全局任务订阅显示退出通知和运行中任务计数，主 run 完成后仍可收到通知。
 - 工具批次保留最近 2 条完整调用，更早的调用合并为一行汇总；大工具输出默认折叠并保存结构化 Artifact 引用，Ctrl+O 在独立查看器中按页读取，避免把几万行文本一次性交给 Ink。
 - 所有文本按终端宽度换行；80×24 是可用的最低验收尺寸。
 - 非 TTY 不进入 raw mode；TUI 独占输出时禁止其他组件直接写 stdout/stderr。
@@ -242,7 +244,7 @@ TUI 包只负责主题解析与应用；CLI 负责配置文件读写，避免把
 
 视觉重构已完成：`ƒ fidoo` 静态品牌时间线、响应式双栏 Welcome、聚焦输入面板、编辑器式工具轨迹、流式 Markdown、代码/命令高亮、命令建议与 Tab 补全、Ctrl+K 命令面板、主题选择、代码评审 diff 和新版审批/状态栏。
 
-已完成 Artifact 结构化引用、安全分页读取、独立输出查看器和 `/artifact <id>`。后续继续：费用与预算进度、验证清单、完整断线重连和更多终端尺寸验收。Web、桌面和 HTTP 传输暂缓，优先完善 Agent + TUI 的真实使用闭环。
+已完成 Artifact 结构化引用、安全分页读取、独立输出查看器和 `/artifact <id>`。已完成 stdio sidecar 自动重启、原 request ID 命令重试、快照与 afterSeq 事件续传、多订阅者共享恢复及中断审批对账。后续继续：费用与预算进度、验证清单和更多终端尺寸验收。Web、桌面和 HTTP 传输暂缓，优先完善 Agent + TUI 的真实使用闭环。
 
 验收：长会话中可取消并恢复，未决副作用仍进入对账；80 列终端不出现布局失控。
 

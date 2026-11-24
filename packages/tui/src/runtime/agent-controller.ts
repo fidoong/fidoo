@@ -31,7 +31,32 @@ export class AgentController {
   constructor(
     private readonly client: AgentClient,
     private readonly cwd: string,
-  ) {}
+  ) {
+    this.client.onConnectionChange((connection) => {
+      if (connection === "reconnecting") {
+        this.clearDelta();
+        this.update({
+          ...this.state,
+          streamingText: "",
+          streamingBlocksStarted: false,
+          responseActive: false,
+          responseStartIndex: undefined,
+          reasoningText: "",
+          reasoningActive: false,
+          reasoningStartedAt: undefined,
+          reasoningEndedAt: undefined,
+          reasoningMessageId: undefined,
+          modelActivity: { ...this.state.modelActivity, active: false, startedAt: undefined },
+          notice: "Connection lost · reconnecting to the agent server",
+        });
+      } else if (connection === "connected") {
+        this.update({ ...this.state, notice: "Connection restored · recovering the run" });
+        void this.refreshTasks();
+      }
+    });
+    void this.refreshTasks();
+    void this.consumeTasks();
+  }
 
   getSnapshot = (): TuiState => this.state;
 
@@ -183,6 +208,28 @@ export class AgentController {
       this.fail(error, generation);
       return false;
     }
+  }
+
+  private async refreshTasks(): Promise<void> {
+    try {
+      const backgroundTasks = await this.client.tasks.list();
+      this.update({ ...this.state, backgroundTasks });
+    } catch {}
+  }
+
+  private async consumeTasks(): Promise<void> {
+    try {
+      for await (const event of this.client.tasks.subscribe()) {
+        await this.refreshTasks();
+        if (event.type === "task.finished") {
+          const exit = event.task.exitCode !== undefined ? ` · exit ${event.task.exitCode}` : "";
+          this.update({
+            ...this.state,
+            notice: `Background task ${event.task.taskId.slice(0, 8)} · ${event.task.status}${exit}`,
+          });
+        }
+      }
+    } catch {}
   }
 
   private async consume(runId: string, afterSeq: number, generation: number): Promise<void> {

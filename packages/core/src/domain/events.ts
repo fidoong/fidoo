@@ -1,5 +1,6 @@
 import type { AssistantMessage, ToolCall, ToolObservation, UserMessage } from "./messages.js";
 import type { TaskPlan } from "./plan.js";
+import type { VerificationEvidence } from "./verification.js";
 
 export const EVENT_SCHEMA_VERSION = 1 as const;
 
@@ -61,8 +62,18 @@ export type AgentEvent =
   | EventBase<"tool.started", { callId: string }>
   | EventBase<"tool.result", { result: ToolObservation }>
   | EventBase<"verification.requested", { reason: string; attempt: number }>
-  | EventBase<"verification.finished", { success: boolean; evidence: string }>
-  | EventBase<"run.completed", { summary: string; verification: "passed" | "not-required" }>
+  | EventBase<
+      "verification.finished",
+      { success: boolean; evidence: string; results?: VerificationEvidence[] }
+    >
+  | EventBase<
+      "run.completed",
+      {
+        summary: string;
+        verification: "passed" | "not-required";
+        results?: VerificationEvidence[];
+      }
+    >
   | EventBase<"run.failed", { error: string; recoverable: boolean }>
   | EventBase<"run.blocked", { reason: string }>
   | EventBase<"run.cancelled", { reason: string }>;

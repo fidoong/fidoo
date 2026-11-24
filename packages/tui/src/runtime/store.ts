@@ -38,6 +38,7 @@ export function initialTuiState(): TuiState {
       startedAt: undefined,
     },
     steeringPending: 0,
+    backgroundTasks: [],
     lastSeq: 0,
     notice: undefined,
     error: undefined,
@@ -148,6 +149,17 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
   }
   if (event.type === "message.reasoning.delta") {
     return appendReasoningText(current, String(event.payload.text ?? ""));
+  }
+  if (event.type === "tool.output.delta") {
+    const callId = String(event.payload.callId ?? "");
+    const tool = current.tools.find((item) => item.id === callId);
+    const output = `${tool?.output ?? ""}${String(event.payload.text ?? "")}`;
+    return {
+      ...current,
+      tools: updateTool(current.tools, callId, {
+        output: output.length > 16_000 ? `…${output.slice(-16_000)}` : output,
+      }),
+    };
   }
   if (event.seq <= current.lastSeq) {
     return current;
@@ -339,6 +351,9 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         : undefined;
       return {
         ...state,
+        phase: state.pendingApproval?.call.id === result.callId ? "running" : state.phase,
+        pendingApproval:
+          state.pendingApproval?.call.id === result.callId ? undefined : state.pendingApproval,
         tools: updateTool(state.tools, result.callId, {
           seq: event.seq,
           name: result.name,

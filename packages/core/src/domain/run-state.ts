@@ -1,6 +1,23 @@
 import type { AgentEvent } from "./events.js";
 import type { Message, ToolCall } from "./messages.js";
 import type { TaskPlan } from "./plan.js";
+import type { RequiredCheck, VerificationEvidence } from "./verification.js";
+import {
+  selectRequiredChecks,
+  successfulVerification,
+  verificationMatchesCheck,
+} from "./verification.js";
+
+export interface RecordedVerification extends VerificationEvidence {
+  seq: number;
+}
+
+export interface VerificationReport {
+  required: boolean;
+  passed: boolean;
+  evidence: RecordedVerification[];
+  pendingChecks: RequiredCheck[];
+}
 
 export type RunStatus = "running" | "completed" | "failed" | "blocked" | "cancelled";
 
@@ -17,6 +34,7 @@ export interface RunState {
   changedFiles: Set<string>;
   lastMutationSeq: number;
   lastVerificationSeq: number;
+  verifications: RecordedVerification[];
   verificationAttempts: number;
   finalSummary?: string;
   error?: string;
@@ -35,6 +53,7 @@ export function emptyRunState(runId: string): RunState {
     changedFiles: new Set(),
     lastMutationSeq: 0,
     lastVerificationSeq: 0,
+    verifications: [],
     verificationAttempts: 0,
   };
 }
@@ -91,8 +110,11 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
         state.changedFiles.add(file);
         state.lastMutationSeq = Math.max(state.lastMutationSeq, event.seq);
       }
-      if (result.verification?.exitCode === 0) {
-        state.lastVerificationSeq = Math.max(state.lastVerificationSeq, event.seq);
+      if (result.verification) {
+        state.verifications.push({ ...result.verification, seq: event.seq });
+        if (successfulVerification(result.verification)) {
+          state.lastVerificationSeq = Math.max(state.lastVerificationSeq, event.seq);
+        }
       }
       break;
     }
@@ -149,6 +171,40 @@ export function replayRun(runId: string, events: AgentEvent[]): RunState {
   return state;
 }
 
-export function needsVerification(state: RunState): boolean {
-  return state.lastMutationSeq > state.lastVerificationSeq;
+export function verificationReport(
+  state: RunState,
+  requiredChecks: readonly RequiredCheck[] = [],
+): VerificationReport {
+  if (state.lastMutationSeq === 0) {
+    return { required: false, passed: true, evidence: [], pendingChecks: [] };
+  }
+  const current = state.verifications.filter((item) => item.seq >= state.lastMutationSeq);
+  const checks = selectRequiredChecks(requiredChecks, state.changedFiles);
+  if (checks.length > 0) {
+    const evidence = checks
+      .map((check) => current.findLast((item) => verificationMatchesCheck(item, check)))
+      .filter((item) => item !== undefined);
+    const pendingChecks = checks.filter((check) => {
+      const latest = current.findLast((item) => verificationMatchesCheck(item, check));
+      return !latest || !successfulVerification(latest);
+    });
+    return { required: true, passed: pendingChecks.length === 0, evidence, pendingChecks };
+  }
+  if (requiredChecks.length > 0) {
+    return { required: false, passed: true, evidence: [], pendingChecks: [] };
+  }
+  const latest = current.at(-1);
+  return {
+    required: true,
+    passed: latest !== undefined && successfulVerification(latest),
+    evidence: latest ? [latest] : [],
+    pendingChecks: [],
+  };
+}
+
+export function needsVerification(
+  state: RunState,
+  requiredChecks: readonly RequiredCheck[] = [],
+): boolean {
+  return !verificationReport(state, requiredChecks).passed;
 }

@@ -39,12 +39,13 @@ try {
   }
   const config = resolveServerConfig(options);
   const runtime = await createNodeRuntime(config);
-  const settings = new NodeSettingsManager(config);
+  const settings = new NodeSettingsManager(config, runtime.tasks);
   const api = new AgentApi({
     createRunService: runtime.createRunService,
     eventStore: runtime.eventStore,
     artifacts: runtime.artifacts,
     workspace: runtime.workspace,
+    tasks: runtime.tasks,
     settings,
   });
   const server = new StdioServer(api);

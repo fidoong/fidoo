@@ -108,7 +108,119 @@ describe("stdio and TUI end to end", () => {
       expect(() => JSON.parse(line)).not.toThrow();
     }
   }, 30_000);
+
+  it("restarts a crashed sidecar and reconciles a pending approval", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-recovery-"));
+    cleanups.push(() => rm(cwd, { recursive: true, force: true }));
+    const provider = await recoveryProvider();
+    cleanups.push(provider.close);
+    const serverEntry = fileURLToPath(
+      new URL("../../apps/agent-server/src/index.ts", import.meta.url),
+    );
+    const connection = connectAgentServer({
+      args: [
+        "--import",
+        "tsx",
+        serverEntry,
+        "--stdio",
+        "--cwd",
+        cwd,
+        "--provider",
+        "openai",
+        "--model",
+        "test-model",
+        "--base-url",
+        provider.baseURL,
+      ],
+      env: {
+        ...process.env,
+        FIDOO_API_KEY: "test-key",
+        FIDOO_HOME: join(cwd, "agent-home"),
+      },
+    });
+    cleanups.push(connection.close);
+    const controller = new AgentController(connection.client, cwd);
+    const view = render(
+      <TuiApp
+        controller={controller}
+        options={{ cwd, provider: "openai", model: "test-model" }}
+        onExit={() => undefined}
+      />,
+    );
+    cleanups.push(() => view.unmount());
+    view.stdin.write("Recover the interrupted run");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Recover the interrupted run"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Approval required"), {
+      timeout: 10_000,
+    });
+
+    const firstPid = connection.process.pid;
+    const runId = controller.getSnapshot().runId;
+    const observed = (async () => {
+      let starts = 0;
+      for await (const event of connection.client.run.subscribe({
+        runId: runId ?? "",
+        afterSeq: 0,
+      })) {
+        if (event.type === "run.started") starts += 1;
+      }
+      return starts;
+    })();
+    connection.process.kill("SIGKILL");
+    await vi.waitFor(
+      () => {
+        expect(view.lastFrame()).toContain("completed");
+        expect(view.lastFrame()).toContain("Recovered after restart");
+      },
+      { timeout: 15_000 },
+    );
+    expect(connection.process.pid).not.toBe(firstPid);
+    expect(controller.getSnapshot().runId).toBe(runId);
+    expect(controller.getSnapshot().pendingApproval).toBeUndefined();
+    expect(provider.requests).toBe(2);
+    const trace = await connection.client.run.trace({ runId: runId ?? "" });
+    expect(new Set(trace.map((event) => event.eventId)).size).toBe(trace.length);
+    expect(trace.filter((event) => event.type === "tool.result")).toHaveLength(1);
+    await expect(observed).resolves.toBe(1);
+  }, 30_000);
 });
+
+async function recoveryProvider(): Promise<{
+  baseURL: string;
+  requests: number;
+  close(): Promise<void>;
+}> {
+  let requests = 0;
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      requests += 1;
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      if (requests === 1) {
+        response.write(
+          toolCall("wait", "bash", { command: process.execPath, args: ["--version"] }, "Waiting"),
+        );
+      } else {
+        response.write(textDelta("Recovered after restart"));
+      }
+      response.end("data: [DONE]\n\n");
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address() as AddressInfo;
+  return {
+    baseURL: `http://127.0.0.1:${address.port}/v1`,
+    get requests() {
+      return requests;
+    },
+    async close() {
+      server.close();
+      await once(server, "close");
+    },
+  };
+}
 
 async function mockProvider(source: string): Promise<{
   baseURL: string;

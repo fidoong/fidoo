@@ -39,6 +39,23 @@ export function toReasoningDelta(runId: string, seq: number, text: string): Publ
   };
 }
 
+export function toToolOutputDelta(
+  runId: string,
+  seq: number,
+  callId: string,
+  text: string,
+): PublicRunEvent {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    runId,
+    seq,
+    eventId: randomUUID(),
+    timestamp: new Date().toISOString(),
+    type: "tool.output.delta",
+    payload: { callId, text },
+  };
+}
+
 export function toPublicSnapshot(state: RunState): RunSnapshot {
   return {
     runId: state.runId,

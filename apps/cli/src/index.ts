@@ -291,6 +291,7 @@ async function createApiClient(config: RuntimeConfig): Promise<AgentClient> {
     eventStore: runtime.eventStore,
     artifacts: runtime.artifacts,
     workspace: runtime.workspace,
+    tasks: runtime.tasks,
   });
   return createAgentClient(new InProcessTransport(api));
 }

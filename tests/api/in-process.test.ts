@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createEvent } from "@fidoo/core";
 import { revisionOf } from "@fidoo/node-runtime";
 import type { PublicRunEvent } from "@fidoo/protocol";
 import { afterEach, describe, expect, it } from "vitest";
@@ -88,6 +89,34 @@ describe("in-process Agent API", () => {
     expect(trace.filter((event) => event.type === "tool.approval_required")).toHaveLength(2);
   });
 
+  it("deduplicates an approval response retried with the same request id", async () => {
+    const cwd = await workspace();
+    const { api, client } = testApi(
+      [
+        assistant("Checking", [
+          call("check", "bash", { command: process.execPath, args: ["--version"] }),
+        ]),
+        assistant("Checked"),
+      ],
+      { permission: "ask" },
+    );
+    const { runId } = await client.run.start({ task: "Check Node", cwd });
+    for await (const event of client.run.subscribe({ runId, afterSeq: 0 })) {
+      if (event.type === "tool.approval_required") {
+        const params = {
+          runId,
+          callId: String(event.payload.callId),
+          decision: "approved",
+        };
+        await api.call("approval.respond", params, "approval-retry");
+        await expect(api.call("approval.respond", params, "approval-retry")).resolves.toEqual({
+          ok: true,
+        });
+      }
+    }
+    expect((await client.run.get({ runId })).status).toBe("completed");
+  });
+
   it("replays afterSeq without duplicate or missing persistent events", async () => {
     const cwd = await workspace();
     const { client } = testApi([assistant("Done")]);
@@ -100,6 +129,40 @@ describe("in-process Agent API", () => {
     const expected = persistent.filter((event) => event.seq > 2).map((event) => event.eventId);
     expect(replayed.map((event) => event.eventId)).toEqual(expected);
     expect(new Set(replayed.map((event) => event.eventId)).size).toBe(replayed.length);
+  });
+
+  it("allows only one execution when the same interrupted run is resumed concurrently", async () => {
+    const cwd = await workspace();
+    const { client, store, model } = testApi([assistant("Resumed once")]);
+    const runId = "concurrent-resume";
+    await store.append(
+      createEvent(
+        { eventId: "start", runId, seq: 1, timestamp: new Date().toISOString() },
+        "run.started",
+        { task: "Original task", cwd },
+      ),
+    );
+    await store.append(
+      createEvent(
+        { eventId: "message", runId, seq: 2, timestamp: new Date().toISOString() },
+        "message.user",
+        { message: { role: "user", source: "user", content: "Original task" } },
+      ),
+    );
+
+    const results = await Promise.allSettled([
+      client.run.resume({ runId, task: "First continuation" }),
+      client.run.resume({ runId, task: "Competing continuation" }),
+    ]);
+    expect(results[0]?.status).toBe("fulfilled");
+    expect(results[1]?.status).toBe("rejected");
+
+    const events = await collect(client.run.subscribe({ runId, afterSeq: 0 }));
+    expect(events.at(-1)?.type).toBe("run.completed");
+    const trace = await client.run.trace({ runId });
+    expect(trace.filter((event) => event.type === "run.resumed")).toHaveLength(1);
+    expect(trace.filter((event) => event.type === "message.user")).toHaveLength(2);
+    expect(model.requests).toHaveLength(1);
   });
 
   it("emits structured artifact references and reads the saved output by id", async () => {

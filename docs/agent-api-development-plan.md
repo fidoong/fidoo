@@ -107,6 +107,8 @@ run.list             分页查询会话
 run.trace            获取审计轨迹，按权限脱敏
 approval.respond     批准或拒绝指定 callId
 artifact.read        按 Artifact ID 分页读取受限内容
+task.list/output/stop 查询输出或停止后台任务
+task.subscribe       订阅全局后台任务启动与完成通知
 config.get           获取可公开的 Provider、权限和预算配置
 session.close        关闭客户端订阅，不取消任务
 ```
@@ -180,7 +182,7 @@ run.completed / run.blocked / run.failed / run.cancelled
 model.usage
 ```
 
-`message.assistant.delta` 与 `message.reasoning.delta` 是独立的临时通知，用于降低流式显示延迟，不承诺重放。客户端必须能仅凭快照和持久事件重建正确界面；恢复历史时不重建原始推理。
+`message.assistant.delta`、`message.reasoning.delta` 与 `tool.output.delta` 是独立的临时通知，用于降低流式显示延迟，不承诺重放。客户端必须能仅凭快照和持久事件重建正确界面；恢复历史时不重建原始推理。后台任务使用独立的全局 `task.event` 通知，不占用 run 的事件序号。
 
 内部事件可以继续演进；公共映射层负责兼容，不允许客户端直接消费存储 JSONL。
 

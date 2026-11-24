@@ -1,4 +1,5 @@
 import type { ArtifactReference } from "../ports/artifacts.js";
+import type { VerificationEvidence } from "./verification.js";
 
 export interface ToolCall {
   id: string;
@@ -28,11 +29,6 @@ export interface ToolMessage {
 }
 
 export type Message = UserMessage | AssistantMessage | ToolMessage;
-
-export interface VerificationEvidence {
-  command: string;
-  exitCode: number;
-}
 
 export interface ToolObservation {
   callId: string;

@@ -7,6 +7,7 @@ import {
   type SettingsUpdateParams,
   settingsUpdateParamsSchema,
 } from "@fidoo/protocol";
+import { BackgroundTaskManager } from "./adapters/tasks/background-task-manager.js";
 import { createNodeRuntime, type NodeRuntime } from "./composition-root.js";
 import type { NodeRuntimeConfig } from "./config.js";
 import { toProviderSettings, writeProviderConnection } from "./model-config.js";
@@ -18,7 +19,10 @@ export interface SettingsUpdateResult {
 }
 
 export class NodeSettingsManager {
-  constructor(private config: NodeRuntimeConfig) {}
+  constructor(
+    private config: NodeRuntimeConfig,
+    private readonly tasks = new BackgroundTaskManager(config.dataHome),
+  ) {}
 
   getSettings(): ProviderSettings {
     return toProviderSettings(this.config);
@@ -51,7 +55,7 @@ export class NodeSettingsManager {
       apiKey,
       thinking: update.thinking ?? this.config.thinking,
     };
-    const runtime = await createNodeRuntime(next);
+    const runtime = await createNodeRuntime(next, undefined, undefined, this.tasks);
     if (update.save) await writeProviderConnection(next);
     this.config = next;
     return { settings: toProviderSettings(next), createRunService: runtime.createRunService };

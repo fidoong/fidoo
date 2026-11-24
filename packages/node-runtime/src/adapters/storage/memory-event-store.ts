@@ -6,6 +6,15 @@ export class MemoryEventStore implements EventStore {
 
   async append(event: AgentEvent): Promise<void> {
     const events = this.runs.get(event.runId) ?? [];
+    if (event.seq !== events.length + 1) {
+      throw new AgentError(
+        `Invalid event sequence for ${event.runId}: expected ${events.length + 1}, received ${event.seq}`,
+        "storage",
+      );
+    }
+    if (events.some((existing) => existing.eventId === event.eventId)) {
+      throw new AgentError(`Duplicate event id: ${event.eventId}`, "storage");
+    }
     events.push(structuredClone(event));
     this.runs.set(event.runId, events);
   }

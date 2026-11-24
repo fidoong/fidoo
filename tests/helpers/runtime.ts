@@ -1,4 +1,4 @@
-import type { ApprovalPort, AssistantMessage, PermissionMode } from "@fidoo/core";
+import type { ApprovalPort, AssistantMessage, PermissionMode, RequiredCheck } from "@fidoo/core";
 import {
   BASE_SYSTEM_PROMPT,
   PolicyEngine,
@@ -32,6 +32,7 @@ export function testRuntime(
     permission?: PermissionMode;
     approval?: ApprovalPort;
     usage?: { inputTokens: number; outputTokens: number };
+    requiredChecks?: RequiredCheck[];
   } = {},
 ) {
   const store = new MemoryEventStore();
@@ -43,10 +44,14 @@ export function testRuntime(
     store,
     workspace: new LocalWorkspace(),
     artifacts,
-    tools: new ToolRegistry([updatePlanTool, ...createCodingTools()]),
+    tools: new ToolRegistry([
+      updatePlanTool,
+      ...createCodingTools(undefined, options.requiredChecks),
+    ]),
     approval: options.approval ?? approveAll,
     policy: new PolicyEngine(options.permission ?? "auto"),
     systemPrompt: BASE_SYSTEM_PROMPT,
+    ...(options.requiredChecks ? { requiredChecks: options.requiredChecks } : {}),
     maxIterations: 10,
   });
   return { service, store, artifacts, model };
