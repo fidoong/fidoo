@@ -94,7 +94,7 @@ export const runSnapshotSchema = z.object({
 
 `RunSummary` 面向会话列表，额外提供 `createdAt` 和 `updatedAt`。`ArtifactReference` 只暴露内容哈希形式的 id、名称与字节数；`ArtifactPage` 增加 offset、limit、totalLines、content 和可选 nextOffset。
 
-`ProviderSettings` 与设置更新参数位于 `providers.ts`，公共设置只包含界面需要展示的连接状态。API Key 只用于更新输入，不应作为查询结果回显。
+`ProviderSettings` 与设置更新参数位于 `providers.ts`，公共设置只包含界面需要展示的连接状态。API Key 只用于更新输入，不应作为查询结果回显。`modelContextWindow` 和 `modelContextBudget` 按 Provider/模型计算上下文窗口，默认预留 8192 个输出 token，并允许用户预算进一步收紧；未知 custom 模型保守使用 100K 窗口。
 
 ## 公共事件清单
 
@@ -102,7 +102,7 @@ export const runSnapshotSchema = z.object({
 | --- | --- | --- |
 | 运行 | `run.started/resumed/steered` | 建立或恢复任务上下文 |
 | 消息 | `message.user/assistant` | 追加持久消息 |
-| 模型 | `model.usage` | 累计中立 Token 用量 |
+| 模型 | `model.usage` | 按 iteration 累计总输入、输出、普通输入、缓存读取和缓存写入 Token |
 | 上下文 | `context.compacted` | 展示历史压缩并恢复视图状态 |
 | 计划 | `plan.updated` | 渲染真实步骤、revision 和证据 |
 | 工具 | `tool.proposed/approval_required/decided/started/result` | 工具卡片、审批、输出与改动 |

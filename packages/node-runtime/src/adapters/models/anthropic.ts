@@ -33,8 +33,16 @@ export class AnthropicModel implements ModelPort {
         body: JSON.stringify({
           model: request.model,
           max_tokens: request.maxTokens ?? 8192,
-          system: request.systemPrompt,
-          messages: request.messages.map(toAnthropicMessage),
+          system: request.cache
+            ? [
+                {
+                  type: "text",
+                  text: request.systemPrompt,
+                  cache_control: { type: "ephemeral" },
+                },
+              ]
+            : request.systemPrompt,
+          messages: toAnthropicMessages(request),
           tools: request.tools.map((tool) => ({
             name: tool.name,
             description: tool.description,
@@ -48,6 +56,15 @@ export class AnthropicModel implements ModelPort {
 
     let content = "";
     let reasoningContent = "";
+    let usage:
+      | {
+          inputTokens: number;
+          outputTokens: number;
+          uncachedInputTokens: number;
+          cacheReadTokens: number;
+          cacheWriteTokens: number;
+        }
+      | undefined;
     const calls = new Map<number, PendingTool>();
     for await (const { data } of readSse(response)) {
       const event = json(data);
@@ -78,16 +95,24 @@ export class AnthropicModel implements ModelPort {
           if (call) call.arguments += text(delta.partial_json) ?? "";
         }
       } else if (event.type === "message_start") {
-        const usage = object(object(event.message)?.usage);
-        const inputTokens = numeric(usage?.input_tokens);
-        if (inputTokens !== undefined) yield { type: "usage", inputTokens };
+        const value = object(object(event.message)?.usage);
+        const uncachedInputTokens = numeric(value?.input_tokens) ?? 0;
+        const cacheReadTokens = numeric(value?.cache_read_input_tokens) ?? 0;
+        const cacheWriteTokens = numeric(value?.cache_creation_input_tokens) ?? 0;
+        usage = {
+          inputTokens: uncachedInputTokens + cacheReadTokens + cacheWriteTokens,
+          outputTokens: numeric(value?.output_tokens) ?? 0,
+          uncachedInputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+        };
       } else if (event.type === "message_delta") {
         const delta = object(event.delta);
         if (delta?.stop_reason === "max_tokens") {
           throw new AgentError("Provider output reached the token limit", "provider", true);
         }
         const outputTokens = numeric(object(event.usage)?.output_tokens);
-        if (outputTokens !== undefined) yield { type: "usage", outputTokens };
+        if (usage && outputTokens !== undefined) usage.outputTokens = outputTokens;
       } else if (event.type === "error") {
         throw new AgentError(
           `Anthropic stream error: ${JSON.stringify(event.error)}`,
@@ -96,6 +121,7 @@ export class AnthropicModel implements ModelPort {
         );
       }
     }
+    if (usage) yield { type: "usage", ...usage };
     const toolCalls: ToolCall[] = [...calls.values()].map((call) => ({
       ...call,
       arguments: call.arguments || "{}",
@@ -112,7 +138,48 @@ export class AnthropicModel implements ModelPort {
   }
 }
 
-function toAnthropicMessage(message: Message) {
+interface AnthropicMessage {
+  role: "user" | "assistant";
+  content: unknown;
+}
+
+function toAnthropicMessages(request: ModelRequest): AnthropicMessage[] {
+  const persistent: AnthropicMessage[] = request.messages.map(toAnthropicMessage);
+  if (request.cache && persistent.length > 0) {
+    const last = persistent.at(-1);
+    if (last) persistent[persistent.length - 1] = withCacheBreakpoint(last);
+  }
+  return [...persistent, ...(request.runtimeMessages ?? []).map(toAnthropicMessage)];
+}
+
+function withCacheBreakpoint(message: AnthropicMessage): AnthropicMessage {
+  if (typeof message.content === "string") {
+    return {
+      ...message,
+      content: [
+        {
+          type: "text",
+          text: message.content,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+    };
+  }
+  if (Array.isArray(message.content) && message.content.length > 0) {
+    const blocks = [...message.content];
+    const last = blocks.at(-1);
+    if (last && typeof last === "object") {
+      blocks[blocks.length - 1] = {
+        ...last,
+        cache_control: { type: "ephemeral" },
+      };
+    }
+    return { ...message, content: blocks };
+  }
+  return message;
+}
+
+function toAnthropicMessage(message: Message): AnthropicMessage {
   if (message.role === "user") {
     return { role: "user", content: message.content };
   }

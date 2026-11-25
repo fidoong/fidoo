@@ -44,6 +44,9 @@ describe("observability projector", () => {
       event(9, "2026-01-01T00:00:08.000Z", "model.usage", {
         inputTokens: 100,
         outputTokens: 20,
+        uncachedInputTokens: 50,
+        cacheReadTokens: 40,
+        cacheWriteTokens: 10,
       }),
       event(10, "2026-01-01T00:00:09.000Z", "run.completed", {
         summary: "Fixed",
@@ -59,6 +62,10 @@ describe("observability projector", () => {
       metrics: {
         inputTokens: 100,
         outputTokens: 20,
+        uncachedInputTokens: 50,
+        cacheReadTokens: 40,
+        cacheWriteTokens: 10,
+        cacheHitRate: 0.4,
         toolCalls: 1,
         failedTools: 0,
         approvalWaitMs: 2000,

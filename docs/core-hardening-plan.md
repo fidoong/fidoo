@@ -115,7 +115,16 @@
 - 增量仓库索引、Tree-sitter AST 和 LSP 定义/引用/诊断。
 - 编辑后立即获取诊断，并推荐变更影响范围内的测试。
 
-### H. Provider 与安全
+### H. Prompt Cache 与成本观测
+
+状态：稳定/临时上下文拆分、工具 Schema 复用、前缀诊断哈希、模型上下文预算、估算校准、统一缓存 usage、TUI/观测指标和 OpenAI/DeepSeek/Anthropic/Gemini 协议适配已完成。真实在线命中率、延迟与费用对比仍需按 Provider/模型做可选冒烟和评测。
+
+- 持久消息只追加，动态 harness 独立传递，缓存断点不落在动态尾部。
+- 命中率按累计 cacheReadTokens / inputTokens 计算，同时观察缓存写入和总 token，避免只优化比例。
+- Anthropic 使用 system 与最后一条持久消息的显式断点；DeepSeek/OpenAI 使用服务端自动缓存能力。
+- 后续补模型匹配的 tokenizer、真实编程任务对照评测和可选显式 Gemini cachedContent。
+
+### I. Provider 与安全
 
 - 流式中途故障恢复、Retry-After、能力探测、费用和运行预算。
 - 可选操作系统沙箱、网络控制、环境变量最小化及事件/Artifact 密钥脱敏。

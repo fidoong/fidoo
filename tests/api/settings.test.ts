@@ -8,6 +8,7 @@ import {
   NodeSettingsManager,
   readProviderConnection,
 } from "@fidoo/node-runtime";
+import { modelContextBudget, modelContextWindow } from "@fidoo/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const directories: string[] = [];
@@ -93,5 +94,13 @@ describe("runtime model settings", () => {
         baseURL: "https://api.openai.com/v1",
       }),
     ).resolves.toEqual({ models: ["future-model", "gpt-4.1-mini"] });
+  });
+
+  it("derives a model-aware context budget with output reserve and user caps", () => {
+    expect(modelContextWindow("openai", "gpt-4.1")).toBe(1_000_000);
+    expect(modelContextBudget("openai", "gpt-4.1")).toBe(991_808);
+    expect(modelContextBudget("openai", "gpt-4.1", 100_000)).toBe(100_000);
+    expect(modelContextBudget("anthropic", "claude-test")).toBe(191_808);
+    expect(modelContextBudget("custom", "unknown", 900_000)).toBe(91_808);
   });
 });

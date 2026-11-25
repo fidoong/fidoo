@@ -36,6 +36,17 @@ describe("DeepSeekModel", () => {
           );
         } else {
           response.write(sse({ reasoning_content: "Verified.", content: "Done" }, "stop"));
+          response.write(
+            `data: ${JSON.stringify({
+              choices: [],
+              usage: {
+                prompt_tokens: 100,
+                completion_tokens: 8,
+                prompt_cache_hit_tokens: 80,
+                prompt_cache_miss_tokens: 20,
+              },
+            })}\n\n`,
+          );
         }
         response.end("data: [DONE]\n\n");
       });
@@ -85,10 +96,21 @@ describe("DeepSeekModel", () => {
           },
         ],
       };
-      await collect(model.stream(secondRequest, new AbortController().signal));
+      const second = await collect(model.stream(secondRequest, new AbortController().signal));
 
+      expect(second.filter((event) => event.type === "usage")).toEqual([
+        {
+          type: "usage",
+          inputTokens: 100,
+          outputTokens: 8,
+          uncachedInputTokens: 20,
+          cacheReadTokens: 80,
+          cacheWriteTokens: 0,
+        },
+      ]);
       expect(requests).toHaveLength(2);
       expect(requests[0]).toMatchObject({ thinking: { type: "enabled" } });
+      expect(requests[0]).not.toHaveProperty("prompt_cache_key");
       expect(requests[1]?.messages).toMatchObject([
         { role: "system" },
         { role: "user" },

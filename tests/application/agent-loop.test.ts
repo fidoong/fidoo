@@ -276,12 +276,25 @@ describe("AgentLoop", () => {
   it("persists provider-neutral model usage", async () => {
     const { cwd } = await sourceFile();
     const { service, store } = testRuntime([assistant("Done")], {
-      usage: { inputTokens: 12, outputTokens: 7 },
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+        uncachedInputTokens: 5,
+        cacheReadTokens: 5,
+        cacheWriteTokens: 2,
+      },
     });
     const state = await service.start("Measure usage", cwd, new AbortController().signal);
     const events = await store.load(state.runId);
     expect(events.find((event) => event.type === "model.usage")).toMatchObject({
-      payload: { inputTokens: 12, outputTokens: 7 },
+      payload: {
+        iteration: 1,
+        inputTokens: 12,
+        outputTokens: 7,
+        uncachedInputTokens: 5,
+        cacheReadTokens: 5,
+        cacheWriteTokens: 2,
+      },
     });
   });
 

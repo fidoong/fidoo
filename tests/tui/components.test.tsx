@@ -84,7 +84,13 @@ describe("TUI themed components", () => {
   it("renders compact usage and file metrics", () => {
     const state = {
       ...initialTuiState(),
-      usage: { inputTokens: 2000, outputTokens: 500 },
+      usage: {
+        inputTokens: 2000,
+        outputTokens: 500,
+        uncachedInputTokens: 2000,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
       changedFiles: ["value.ts"],
     };
     const view = render(<StatusBar state={state} />);

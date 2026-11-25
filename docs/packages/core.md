@@ -105,7 +105,7 @@ interface VerificationEvidence {
 
 ## 上下文与扩展点
 
-`context-builder.ts` 按完整消息单元裁剪历史，assistant 工具调用与对应 tool results 必须一起保留或移除。原始任务、真实计划、最近轮次和 harness 状态优先保留；固定上下文本身超过预算时明确失败。
+`context-builder.ts` 按完整消息单元裁剪历史，assistant 工具调用与对应 tool results 必须一起保留或移除。原始任务、真实计划和最近轮次进入持久 `messages`，每轮变化的 harness 放入独立 `runtimeMessages`；固定上下文本身超过预算时明确失败。工具 Schema 按 ToolRegistry 预计算复用，请求附带静态前缀、会话前缀和完整请求的 SHA-256 诊断哈希。
 
 新增模型、存储或审批方式时实现对应 Port，不要在 Core 中 import 厂商 SDK。新增工具时定义 ToolDefinition，并由外部 Runtime 注册。
 
@@ -158,9 +158,9 @@ interface VerificationEvidence {
 
 ## 上下文裁剪算法细节
 
-`buildModelRequest` 每轮先把 ToolRegistry 中的 Zod Schema 用 `z.toJSONSchema` 转为模型工具参数，再追加一条 harness 消息。Harness 包含工作区、改动文件、是否需要验证、当前计划和剩余迭代数。
+`buildModelRequest` 首次使用某个 ToolRegistry 时把 Zod Schema 用 `z.toJSONSchema` 转为模型工具参数，之后通过 WeakMap 复用同一数组，保证多次请求的工具定义字节稳定。持久消息只追加到 `messages`；包含工作区、改动文件、验证状态和当前计划的 harness 单独放入 `runtimeMessages`，不再发送剩余迭代数。
 
-Token 当前采用 `JSON.length / 4` 的中立估算，而非厂商 tokenizer。估算同时计入系统提示、工具 Schema 和消息，避免只裁剪正文却忽略工具定义。
+Token 基础估算采用 `JSON.length / 4`，同时计入系统提示、工具 Schema、持久消息和临时消息。每次 `model.started` 记录预估值，收到真实 `model.usage` 后将实际输入与预估比例限制在 0.5–4 倍并用于后续预算判断；这不是厂商 tokenizer，但能减少中文和协议开销造成的系统性偏差。
 
 超预算时执行以下步骤：
 
@@ -185,7 +185,7 @@ Token 当前采用 `JSON.length / 4` 的中立估算，而非厂商 tokenizer。
 
 ## 端口调用契约
 
-`ModelPort.stream` 返回 AsyncIterable，事件包括 text、reasoning、usage 和 message.completed。Provider 流结束却没有完整消息，或完整消息正文与工具调用均为空，AgentLoop 会明确判定 Provider 失败。
+`ModelPort.stream` 返回 AsyncIterable，事件包括 text、reasoning、usage 和 message.completed。`ModelRequest` 分离持久 `messages` 与临时 `runtimeMessages`，`cache` 只包含 Provider 中立的 key 和诊断哈希。最终 usage 包含总输入、输出、普通输入、缓存读取与缓存写入；Provider 流结束却没有完整消息，或完整消息正文与工具调用均为空，AgentLoop 会明确判定 Provider 失败。
 
 `EventStore.append/load/list` 分别负责追加、单 run 重放和会话列表；`ArtifactStore.save/read` 负责大输出的保存与分页；`WorkspacePort.assertDirectory` 在任务事件创建前返回规范化目录；`ApprovalPort.approve` 必须响应取消信号。
 

@@ -28,7 +28,13 @@ export function initialTuiState(): TuiState {
     pendingInput: undefined,
     changedFiles: [],
     verificationStatus: undefined,
-    usage: { inputTokens: 0, outputTokens: 0 },
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      uncachedInputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    },
     contextTokens: 0,
     modelActivity: {
       active: false,
@@ -276,15 +282,26 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
           failures: state.modelActivity.failures + 1,
         },
       };
-    case "model.usage":
+    case "model.usage": {
+      const inputTokens = Number(event.payload.inputTokens ?? 0);
+      const cacheReadTokens = Number(event.payload.cacheReadTokens ?? 0);
+      const cacheWriteTokens = Number(event.payload.cacheWriteTokens ?? 0);
+      const uncachedInputTokens = Number(
+        event.payload.uncachedInputTokens ??
+          Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens),
+      );
       return {
         ...state,
         contextTokens: Number(event.payload.inputTokens ?? state.contextTokens),
         usage: {
-          inputTokens: state.usage.inputTokens + Number(event.payload.inputTokens ?? 0),
+          inputTokens: state.usage.inputTokens + inputTokens,
           outputTokens: state.usage.outputTokens + Number(event.payload.outputTokens ?? 0),
+          uncachedInputTokens: state.usage.uncachedInputTokens + uncachedInputTokens,
+          cacheReadTokens: state.usage.cacheReadTokens + cacheReadTokens,
+          cacheWriteTokens: state.usage.cacheWriteTokens + cacheWriteTokens,
         },
       };
+    }
     case "plan.updated": {
       const plan = event.payload.plan as ViewTaskPlan | undefined;
       if (!plan || typeof plan.title !== "string" || !Array.isArray(plan.steps)) {

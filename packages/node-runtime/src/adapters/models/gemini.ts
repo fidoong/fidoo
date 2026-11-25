@@ -1,4 +1,11 @@
-import type { Message, ModelEvent, ModelPort, ModelRequest, ToolCall } from "@fidoo/core";
+import type {
+  Message,
+  ModelEvent,
+  ModelPort,
+  ModelRequest,
+  ModelUsage,
+  ToolCall,
+} from "@fidoo/core";
 import { AgentError } from "@fidoo/core";
 import { openProviderStream, readSse } from "./http.js";
 
@@ -28,7 +35,7 @@ export class GeminiModel implements ModelPort {
         },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: request.systemPrompt }] },
-          contents: request.messages.map(toGeminiContent),
+          contents: [...request.messages, ...(request.runtimeMessages ?? [])].map(toGeminiContent),
           tools: [
             {
               functionDeclarations: request.tools.map((tool) => ({
@@ -48,17 +55,20 @@ export class GeminiModel implements ModelPort {
 
     let content = "";
     let reasoningContent = "";
+    let usage: ModelUsage | undefined;
     const toolCalls: ToolCall[] = [];
     for await (const { data } of readSse(response)) {
       const event = JSON.parse(data) as Record<string, unknown>;
-      const usage = object(event.usageMetadata);
-      if (usage) {
-        const inputTokens = numeric(usage.promptTokenCount);
-        const outputTokens = numeric(usage.candidatesTokenCount);
-        yield {
-          type: "usage",
-          ...(inputTokens !== undefined ? { inputTokens } : {}),
-          ...(outputTokens !== undefined ? { outputTokens } : {}),
+      const currentUsage = object(event.usageMetadata);
+      if (currentUsage) {
+        const inputTokens = numeric(currentUsage.promptTokenCount) ?? 0;
+        const cacheReadTokens = numeric(currentUsage.cachedContentTokenCount) ?? 0;
+        usage = {
+          inputTokens,
+          outputTokens: numeric(currentUsage.candidatesTokenCount) ?? 0,
+          uncachedInputTokens: Math.max(0, inputTokens - cacheReadTokens),
+          cacheReadTokens,
+          cacheWriteTokens: 0,
         };
       }
       const candidates = Array.isArray(event.candidates) ? event.candidates : [];
@@ -88,6 +98,7 @@ export class GeminiModel implements ModelPort {
         }
       }
     }
+    if (usage) yield { type: "usage", ...usage };
     yield {
       type: "message.completed",
       message: {

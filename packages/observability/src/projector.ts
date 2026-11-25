@@ -59,6 +59,9 @@ export function projectRun(runId: string, input: PublicRunEvent[]): RunProjectio
   const changedFiles = new Set<string>();
   let inputTokens = 0;
   let outputTokens = 0;
+  let uncachedInputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
   let compactions = 0;
   let latestPlan: unknown;
   let finalSummary: string | undefined;
@@ -118,8 +121,17 @@ export function projectRun(runId: string, input: PublicRunEvent[]): RunProjectio
       model.eventIds.push(event.eventId);
       model.detail = redact(payload);
     } else if (event.type === "model.usage") {
-      inputTokens += number(payload.inputTokens);
+      const input = number(payload.inputTokens);
+      const cacheRead = number(payload.cacheReadTokens);
+      const cacheWrite = number(payload.cacheWriteTokens);
+      inputTokens += input;
       outputTokens += number(payload.outputTokens);
+      uncachedInputTokens +=
+        typeof payload.uncachedInputTokens === "number"
+          ? number(payload.uncachedInputTokens)
+          : Math.max(0, input - cacheRead - cacheWrite);
+      cacheReadTokens += cacheRead;
+      cacheWriteTokens += cacheWrite;
     } else if (event.type === "context.compacted") {
       compactions += 1;
     } else if (event.type === "plan.updated") {
@@ -236,6 +248,10 @@ export function projectRun(runId: string, input: PublicRunEvent[]): RunProjectio
   const metrics: RunMetrics = {
     inputTokens,
     outputTokens,
+    uncachedInputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    cacheHitRate: inputTokens > 0 ? cacheReadTokens / inputTokens : 0,
     modelCalls: modelSpans.filter((span) => span.status === "success").length,
     failedModelCalls: modelSpans.filter((span) => span.status === "error").length,
     modelDurationMs: modelSpans.reduce((total, span) => total + (span.durationMs ?? 0), 0),

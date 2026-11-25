@@ -212,6 +212,45 @@ export const providerModelsResultSchema = z.object({
   unavailable: z.boolean().optional(),
 });
 
+const PROVIDER_CONTEXT_WINDOWS: Record<ProviderKind, number> = {
+  openai: 200_000,
+  deepseek: 128_000,
+  kimi: 128_000,
+  "kimi-code": 100_000,
+  qwen: 128_000,
+  zhipu: 128_000,
+  xai: 128_000,
+  openrouter: 100_000,
+  anthropic: 200_000,
+  gemini: 1_000_000,
+  custom: 100_000,
+};
+
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  "openai:gpt-4.1": 1_000_000,
+  "openai:gpt-4.1-mini": 1_000_000,
+  "kimi-code:k3-256k": 256_000,
+  "xai:grok-4": 256_000,
+  "openrouter:openai/gpt-4.1": 1_000_000,
+  "openrouter:anthropic/claude-sonnet-4": 200_000,
+  "openrouter:google/gemini-2.5-pro": 1_000_000,
+  "openrouter:deepseek/deepseek-chat-v3-0324": 128_000,
+};
+
+export function modelContextWindow(provider: ProviderKind, model: string): number {
+  return MODEL_CONTEXT_WINDOWS[`${provider}:${model}`] ?? PROVIDER_CONTEXT_WINDOWS[provider];
+}
+
+export function modelContextBudget(
+  provider: ProviderKind,
+  model: string,
+  requested?: number,
+  reservedOutputTokens = 8192,
+): number {
+  const available = Math.max(1, modelContextWindow(provider, model) - reservedOutputTokens);
+  return Math.max(1, Math.min(requested ?? available, available));
+}
+
 export function normalizeProviderBaseURL(provider: ProviderKind, value: string): string {
   const trimmed = value.trim().replace(/\/$/, "");
   try {

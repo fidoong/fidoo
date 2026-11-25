@@ -1,6 +1,7 @@
 import type {
   ApprovalPort,
   AssistantMessage,
+  ModelUsage,
   PermissionMode,
   RequiredCheck,
   UserInputPort,
@@ -38,7 +39,7 @@ export function testRuntime(
   options: {
     permission?: PermissionMode;
     approval?: ApprovalPort;
-    usage?: { inputTokens: number; outputTokens: number };
+    usage?: Pick<ModelUsage, "inputTokens" | "outputTokens"> & Partial<ModelUsage>;
     requiredChecks?: RequiredCheck[];
     userInput?: UserInputPort;
   } = {},

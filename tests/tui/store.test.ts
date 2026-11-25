@@ -196,8 +196,23 @@ describe("TUI event projection", () => {
   it("accumulates persistent usage across model requests", () => {
     let state = initialTuiState();
     state = applyRunEvent(state, event(1, "model.usage", { inputTokens: 1200, outputTokens: 300 }));
-    state = applyRunEvent(state, event(2, "model.usage", { inputTokens: 800, outputTokens: 200 }));
-    expect(state.usage).toEqual({ inputTokens: 2000, outputTokens: 500 });
+    state = applyRunEvent(
+      state,
+      event(2, "model.usage", {
+        inputTokens: 800,
+        outputTokens: 200,
+        uncachedInputTokens: 150,
+        cacheReadTokens: 600,
+        cacheWriteTokens: 50,
+      }),
+    );
+    expect(state.usage).toEqual({
+      inputTokens: 2000,
+      outputTokens: 500,
+      uncachedInputTokens: 1350,
+      cacheReadTokens: 600,
+      cacheWriteTokens: 50,
+    });
     expect(state.contextTokens).toBe(800);
   });
 

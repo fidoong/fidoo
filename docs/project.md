@@ -7,7 +7,7 @@ Fidoo 是一个面向本地 AI 编程的 TypeScript monorepo。终端界面、�
 一次运行从 `run.start` 开始，以持久事件为事实源。界面只能提交命令和展示事件，不能自行决定任务已经成功。
 
 1. **表达任务**：CLI 或 TUI 通过 AgentClient 提交 `task` 与 `cwd`，服务端返回 `runId`。
-2. **构建上下文**：Core 组合系统提示、项目 `AGENTS.md`、真实计划、历史消息和工具 Schema。
+2. **构建上下文**：Core 组合系统提示、项目 `AGENTS.md`、真实计划、历史消息和工具 Schema；持久对话与每轮临时 harness 分离，稳定前缀用于 Provider 缓存复用。
 3. **模型决策**：Provider 适配器把中立请求转换为厂商请求，流式正文与推理使用临时通知。
 4. **工具执行**：PolicyEngine 先决定允许、审批或拒绝，ToolScheduler 再按并发语义执行。
 5. **持久事实**：工具结果、文件改动、计划和模型用量按连续 `seq` 写入 EventStore。
@@ -153,6 +153,12 @@ pnpm eval:offline
 3. 主 Agent run 可以继续完成，后台任务不受其终态影响。
 4. TUI 通过 task.subscribe 刷新任务数，收到退出通知时展示 exitCode。
 5. `task_output` 分页读取日志，`task_stop` 停止整个进程组并持久 stopped。
+
+## 模型前缀缓存与成本指标
+
+Core 将请求拆为稳定 system/tools、只追加的持久 `messages` 和每轮临时 `runtimeMessages`。工具 Schema 只生成一次，模型请求携带静态、会话和完整请求哈希；哈希仅用于诊断，不代表服务端实际命中。
+
+Provider 适配器统一返回总输入、普通输入、缓存读取、缓存写入和输出 token。OpenAI/DeepSeek 使用自动缓存，Anthropic 使用 system 与最后一条持久消息的显式缓存断点，Gemini 采集隐式缓存用量。TUI `/status` 和 Observability 按累计 token 计算缓存命中率，同时保留缓存写入量，避免用高命中率掩盖总成本上升。
 
 ## 本地数据与文件布局
 

@@ -15,6 +15,8 @@ export function StatusDialog({
   cwd: string;
   contextLimit: number;
 }) {
+  const cacheHitRate =
+    state.usage.inputTokens > 0 ? state.usage.cacheReadTokens / state.usage.inputTokens : 0;
   return (
     <Box
       flexDirection="column"
@@ -35,6 +37,10 @@ export function StatusDialog({
       <Field
         label="Tokens"
         value={`${state.usage.inputTokens} in / ${state.usage.outputTokens} out`}
+      />
+      <Field
+        label="Cache"
+        value={`${Math.round(cacheHitRate * 100)}% hit · ${state.usage.cacheReadTokens} read / ${state.usage.cacheWriteTokens} write`}
       />
       <Field label="Context" value={`${state.contextTokens} / ${contextLimit} tokens`} />
       <Field

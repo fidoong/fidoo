@@ -38,6 +38,7 @@ export interface AgentLoopOptions {
   userInput?: UserInputPort;
   subagents?: SubagentPort;
   systemPrompt: string;
+  cacheKey?: string;
   observer?: RuntimeObserver;
   maxIterations?: number;
   maxContextTokens?: number;
@@ -157,13 +158,29 @@ export class AgentLoop {
       systemPrompt: this.options.systemPrompt,
       tools: this.options.tools,
       maxTokens: this.options.maxContextTokens ?? 100_000,
-      remainingIterations: (this.options.maxIterations ?? 40) - iteration + 1,
+      estimateScale: this.state.tokenEstimateRatio,
+      ...(this.options.cacheKey ? { cacheKey: this.options.cacheKey } : {}),
     });
     if (built.compaction) {
       await this.append("context.compacted", built.compaction);
     }
     built.request.messages = await this.hydrateImages(built.request.messages);
-    await this.append("model.started", { iteration, model: this.options.modelName });
+    if (built.request.runtimeMessages) {
+      built.request.runtimeMessages = await this.hydrateImages(built.request.runtimeMessages);
+    }
+    await this.append("model.started", {
+      iteration,
+      model: this.options.modelName,
+      estimatedInputTokens: built.estimatedTokens,
+      ...(built.request.cache?.key ? { cacheKey: built.request.cache.key } : {}),
+      ...(built.request.cache
+        ? {
+            staticPrefixHash: built.request.cache.staticPrefixHash,
+            conversationPrefixHash: built.request.cache.conversationPrefixHash,
+            requestHash: built.request.cache.requestHash,
+          }
+        : {}),
+    });
     const startedAt = Date.now();
     let completed: AssistantMessage | undefined;
     try {
@@ -173,12 +190,14 @@ export class AgentLoop {
         } else if (event.type === "reasoning.delta") {
           this.options.observer?.onReasoningDelta?.(event.text, this.runId);
         } else if (event.type === "usage") {
-          if (event.inputTokens !== undefined || event.outputTokens !== undefined) {
-            await this.append("model.usage", {
-              inputTokens: event.inputTokens ?? 0,
-              outputTokens: event.outputTokens ?? 0,
-            });
-          }
+          await this.append("model.usage", {
+            iteration,
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            uncachedInputTokens: event.uncachedInputTokens,
+            cacheReadTokens: event.cacheReadTokens,
+            cacheWriteTokens: event.cacheWriteTokens,
+          });
         } else if (event.type === "message.completed") {
           completed = event.message;
         }

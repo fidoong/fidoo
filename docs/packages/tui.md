@@ -102,7 +102,7 @@ generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后
 | `message.user` | 追加用户消息，带 steeringId 时减少 pending 数 |
 | `message.assistant` | 固化正文、清空 streamingText、结束 reasoning |
 | `model.started/completed/failed` | 更新 iteration、模型调用数、耗时、失败数和 active |
-| `model.usage` | 当前 contextTokens 使用最新输入值，usage 累加多次调用 |
+| `model.usage` | 当前 contextTokens 使用最新总输入值，累计普通输入、缓存读取、缓存写入与输出；兼容旧事件缺省字段 |
 | `plan.updated` | structuredClone 完整真实计划，防止引用共享修改 |
 | `tool.proposed` | 按 callId 和 seq 创建 proposed 工具卡片 |
 | `tool.approval_required` | 创建 PendingApproval，phase 进入 awaiting_approval |
@@ -148,6 +148,7 @@ generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后
 | `components/dialogs/settings-dialog.tsx` | Provider 连接、模型发现、校验和保存 |
 | `components/dialogs/user-input-dialog.tsx` | 多题单选、多选、自由输入、答案校验和提交状态 |
 | `components/dialogs/trace-dialog.tsx` | 公共事件轨迹查看 |
+| `components/dialogs/status-dialog.tsx` | 运行、上下文、缓存命中率、缓存读写、模型调用与验证状态 |
 | `components/layout/status-bar.tsx` | phase、runId、文件数、上下文、Token、Provider 和后台任务 |
 | `components/layout/spinner.tsx` | 使用共享 animation clock，避免每个 Spinner 独立定时器 |
 | `runtime/viewport.ts` | `visibleTail` 限制输出可见尾部 |

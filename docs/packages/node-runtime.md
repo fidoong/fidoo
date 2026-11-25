@@ -27,7 +27,7 @@ NodeRuntimeConfig
 
 ## Provider 适配器
 
-`OpenAICompatibleModel` 处理兼容端点，DeepSeek、Anthropic 和 Gemini 适配各自协议。它们把厂商流式响应转换为 Core 的中立事件：正文、推理、工具调用、完整消息和 Token 用量。
+`OpenAICompatibleModel` 处理兼容端点，DeepSeek、Anthropic 和 Gemini 适配各自协议。它们把厂商流式响应转换为 Core 的中立事件：正文、推理、工具调用、完整消息和 Token 用量。每次模型调用只输出一次最终 usage，统一为总输入、输出、普通输入、缓存读取和缓存写入 token。
 
 - Base URL 可以显式配置，DeepSeek 等兼容服务不需要修改 Core。
 - `UnavailableModel` 在模型或必需密钥缺失时给出配置错误。
@@ -35,6 +35,14 @@ NodeRuntimeConfig
 - `model-config.ts` 管理本地连接配置，Provider 私密字段不进入公共事件。
 
 真实在线 Provider 冒烟测试与离线 FakeModel 评测保持分离，不能用协议单元测试声称在线联调成功。
+
+### Prompt Cache 与上下文预算
+
+- OpenAI 兼容适配器读取 `prompt_tokens_details.cached_tokens/cache_write_tokens`，也识别 DeepSeek 的 `prompt_cache_hit_tokens/prompt_cache_miss_tokens`。仅官方 OpenAI 连接发送稳定的工作区/模型哈希 `prompt_cache_key`，不向其他兼容服务盲发该字段。
+- DeepSeek 使用服务端自动磁盘缓存，本地不维护第二份 KV Cache。
+- Anthropic 在 system 末尾和最后一条持久消息设置显式 `cache_control`；临时 harness 不设置断点，也不只依赖会落在动态尾部的顶层自动缓存。
+- Gemini 读取 `cachedContentTokenCount`，流式 chunk 中重复出现的累计 usage 只采用最后值；显式 cachedContent 生命周期管理尚未实现。
+- 组合根使用 `modelContextBudget` 计算有效输入预算，模型窗口减去输出预留后再应用用户上限。缓存命中以 Provider 返回的真实 usage 为准，本地前缀哈希只用于诊断请求稳定性。
 
 ## 工作区与文件工具
 

@@ -1,4 +1,11 @@
-import type { Message, ModelEvent, ModelPort, ModelRequest, ToolCall } from "@fidoo/core";
+import type {
+  Message,
+  ModelEvent,
+  ModelPort,
+  ModelRequest,
+  ModelUsage,
+  ToolCall,
+} from "@fidoo/core";
 import { AgentError, backoffDelay, withRetry } from "@fidoo/core";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions/completions.js";
@@ -8,6 +15,7 @@ export interface OpenAICompatibleOptions {
   baseURL?: string;
   extraBody?: Record<string, unknown>;
   passReasoningContent?: boolean;
+  promptCacheKey?: boolean;
   timeoutMs?: number;
 }
 
@@ -21,12 +29,14 @@ export class OpenAICompatibleModel implements ModelPort {
   private readonly client: OpenAI;
   private readonly extraBody: Record<string, unknown>;
   private readonly passReasoningContent: boolean;
+  private readonly promptCacheKey: boolean;
   private readonly endpoint: string;
   private readonly timeoutMs: number;
 
   constructor(options: OpenAICompatibleOptions) {
     this.extraBody = options.extraBody ?? {};
     this.passReasoningContent = options.passReasoningContent ?? false;
+    this.promptCacheKey = options.promptCacheKey ?? false;
     this.endpoint = safeEndpoint(options.baseURL ?? "https://api.openai.com/v1");
     this.timeoutMs = options.timeoutMs ?? 120_000;
     this.client = new OpenAI({
@@ -56,6 +66,9 @@ export class OpenAICompatibleModel implements ModelPort {
               })),
               stream: true,
               stream_options: { include_usage: true },
+              ...(this.promptCacheKey && request.cache?.key
+                ? { prompt_cache_key: request.cache.key }
+                : {}),
               ...(request.maxTokens ? { max_tokens: request.maxTokens } : {}),
               ...this.extraBody,
             },
@@ -102,15 +115,7 @@ export class OpenAICompatibleModel implements ModelPort {
           throw new AgentError("Provider output reached the token limit", "provider", true);
         }
         if (chunk.usage) {
-          yield {
-            type: "usage",
-            ...(chunk.usage.prompt_tokens !== undefined
-              ? { inputTokens: chunk.usage.prompt_tokens }
-              : {}),
-            ...(chunk.usage.completion_tokens !== undefined
-              ? { outputTokens: chunk.usage.completion_tokens }
-              : {}),
-          };
+          yield { type: "usage", ...normalizeUsage(chunk.usage) };
         }
       }
 
@@ -174,7 +179,7 @@ function toProviderMessages(
 ): ChatCompletionMessageParam[] {
   return [
     { role: "system", content: request.systemPrompt },
-    ...request.messages.flatMap((message) => {
+    ...[...request.messages, ...(request.runtimeMessages ?? [])].flatMap((message) => {
       const primary = toProviderMessage(message, passReasoningContent);
       if (message.role !== "tool" || !message.images?.length) return [primary];
       const imageMessage: ChatCompletionMessageParam = {
@@ -227,6 +232,33 @@ function toProviderMessage(
         content: message.content,
       };
   }
+}
+
+function normalizeUsage(usage: {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  prompt_tokens_details?: {
+    cached_tokens?: number;
+    cache_write_tokens?: number;
+  };
+}): ModelUsage {
+  const cacheReadTokens =
+    usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0;
+  const cacheWriteTokens = usage.prompt_tokens_details?.cache_write_tokens ?? 0;
+  const inputTokens =
+    usage.prompt_tokens ??
+    (usage.prompt_cache_hit_tokens ?? 0) + (usage.prompt_cache_miss_tokens ?? 0);
+  return {
+    inputTokens,
+    outputTokens: usage.completion_tokens ?? 0,
+    uncachedInputTokens:
+      usage.prompt_cache_miss_tokens ??
+      Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens),
+    cacheReadTokens,
+    cacheWriteTokens,
+  };
 }
 
 function isRetryableProviderError(error: unknown): boolean {

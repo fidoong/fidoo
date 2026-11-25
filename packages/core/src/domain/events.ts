@@ -21,7 +21,18 @@ export type AgentEvent =
   | EventBase<"run.steered", { instructionId: string; task: string }>
   | EventBase<"message.user", { message: UserMessage; steeringId?: string }>
   | EventBase<"message.assistant", { message: AssistantMessage }>
-  | EventBase<"model.started", { iteration: number; model: string }>
+  | EventBase<
+      "model.started",
+      {
+        iteration: number;
+        model: string;
+        estimatedInputTokens?: number;
+        cacheKey?: string;
+        staticPrefixHash?: string;
+        conversationPrefixHash?: string;
+        requestHash?: string;
+      }
+    >
   | EventBase<
       "model.completed",
       {
@@ -42,7 +53,17 @@ export type AgentEvent =
         recoverable: boolean;
       }
     >
-  | EventBase<"model.usage", { inputTokens: number; outputTokens: number }>
+  | EventBase<
+      "model.usage",
+      {
+        iteration: number;
+        inputTokens: number;
+        outputTokens: number;
+        uncachedInputTokens: number;
+        cacheReadTokens: number;
+        cacheWriteTokens: number;
+      }
+    >
   | EventBase<
       "context.compacted",
       {

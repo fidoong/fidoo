@@ -1,4 +1,10 @@
-import type { AssistantMessage, ModelEvent, ModelPort, ModelRequest } from "@fidoo/core";
+import type {
+  AssistantMessage,
+  ModelEvent,
+  ModelPort,
+  ModelRequest,
+  ModelUsage,
+} from "@fidoo/core";
 
 export class FakeModel implements ModelPort {
   readonly requests: ModelRequest[] = [];
@@ -6,7 +12,7 @@ export class FakeModel implements ModelPort {
 
   constructor(
     private readonly responses: AssistantMessage[],
-    private readonly usage?: { inputTokens: number; outputTokens: number },
+    private readonly usage?: Pick<ModelUsage, "inputTokens" | "outputTokens"> & Partial<ModelUsage>,
   ) {}
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
@@ -16,7 +22,13 @@ export class FakeModel implements ModelPort {
       throw new Error(`No scripted response for request ${this.index}`);
     }
     if (this.usage) {
-      yield { type: "usage", ...this.usage };
+      yield {
+        type: "usage",
+        ...this.usage,
+        uncachedInputTokens: this.usage.uncachedInputTokens ?? this.usage.inputTokens,
+        cacheReadTokens: this.usage.cacheReadTokens ?? 0,
+        cacheWriteTokens: this.usage.cacheWriteTokens ?? 0,
+      };
     }
     if (response.reasoningContent) {
       yield { type: "reasoning.delta", text: response.reasoningContent };

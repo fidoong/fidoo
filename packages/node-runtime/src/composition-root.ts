@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   ApprovalPort,
   ArtifactStore,
@@ -20,7 +21,7 @@ import {
   updatePlanTool,
   withProjectInstructions,
 } from "@fidoo/core";
-import { providerDefinition } from "@fidoo/protocol";
+import { modelContextBudget, providerDefinition } from "@fidoo/protocol";
 import { RejectApproval } from "./adapters/approval/reject.js";
 import { WorkspaceChangeManager } from "./adapters/changes/workspace-change-manager.js";
 import { AnthropicModel } from "./adapters/models/anthropic.js";
@@ -75,6 +76,11 @@ export async function createNodeRuntime(
   const workspace = new LocalWorkspace();
   const tasks = taskManager ?? new BackgroundTaskManager(config.dataHome);
   const changes = new WorkspaceChangeManager(config.dataHome);
+  const contextBudget = modelContextBudget(config.provider, config.model, config.maxContextTokens);
+  const cacheKey =
+    config.provider === "openai"
+      ? `fidoo:v1:${createHash("sha256").update(`${config.cwd}\0${config.model}`).digest("hex").slice(0, 32)}`
+      : undefined;
   const subagents = new RunServiceSubagent({
     model: createModel(config),
     modelName: config.model,
@@ -87,8 +93,9 @@ export async function createNodeRuntime(
     approval: new RejectApproval(),
     policy: new PolicyEngine("read-only"),
     systemPrompt: `${withProjectInstructions(instructions)}\n\nYou are a read-only research subagent. Inspect the workspace and return concrete findings to the parent. Do not attempt writes, commands, user questions or nested delegation.`,
+    ...(cacheKey ? { cacheKey } : {}),
     maxIterations: Math.min(config.maxIterations, 12),
-    maxContextTokens: config.maxContextTokens ?? 100_000,
+    maxContextTokens: contextBudget,
   });
   const createService = (
     serviceObserver?: RuntimeObserver,
@@ -113,9 +120,10 @@ export async function createNodeRuntime(
       subagents,
       policy: new PolicyEngine(permissionMode, permission.rules),
       systemPrompt: withProjectInstructions(instructions, requiredChecks),
+      ...(cacheKey ? { cacheKey } : {}),
       requiredChecks,
       maxIterations: config.maxIterations,
-      maxContextTokens: config.maxContextTokens ?? 100_000,
+      maxContextTokens: contextBudget,
       ...(serviceObserver ? { observer: serviceObserver } : {}),
     });
   return {
@@ -156,6 +164,7 @@ function createModel(config: NodeRuntimeConfig): ModelPort {
   }
   return new OpenAICompatibleModel({
     apiKey: config.apiKey || "not-required",
+    promptCacheKey: config.provider === "openai",
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
   });
 }

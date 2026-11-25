@@ -3,6 +3,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AgentError } from "@fidoo/core";
 import {
+  modelContextBudget,
   normalizeProviderBaseURL,
   type ProviderKind,
   type ProviderSettings,
@@ -122,7 +123,7 @@ export function toProviderSettings(config: NodeRuntimeConfig): ProviderSettings 
         (!definition.baseURLRequired || config.baseURL) &&
         (!definition.apiKeyRequired || config.apiKey),
     ),
-    contextLimit: config.maxContextTokens ?? 100_000,
+    contextLimit: modelContextBudget(config.provider, config.model, config.maxContextTokens),
     thinking: config.thinking,
   };
 }

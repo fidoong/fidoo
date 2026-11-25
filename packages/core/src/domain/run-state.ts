@@ -36,6 +36,8 @@ export interface RunState {
   lastVerificationSeq: number;
   verifications: RecordedVerification[];
   verificationAttempts: number;
+  tokenEstimateRatio: number;
+  lastEstimatedInputTokens: number;
   finalSummary?: string;
   error?: string;
 }
@@ -55,6 +57,8 @@ export function emptyRunState(runId: string): RunState {
     lastVerificationSeq: 0,
     verifications: [],
     verificationAttempts: 0,
+    tokenEstimateRatio: 1,
+    lastEstimatedInputTokens: 0,
   };
 }
 
@@ -151,9 +155,18 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
       state.steeringRequests.set(event.payload.instructionId, event.payload.task);
       break;
     case "model.started":
+      state.lastEstimatedInputTokens = event.payload.estimatedInputTokens ?? 0;
+      break;
+    case "model.usage":
+      if (state.lastEstimatedInputTokens > 0) {
+        state.tokenEstimateRatio = Math.min(
+          4,
+          Math.max(0.5, event.payload.inputTokens / state.lastEstimatedInputTokens),
+        );
+      }
+      break;
     case "model.completed":
     case "model.failed":
-    case "model.usage":
     case "tool.approval_required":
     case "tool.decided":
     case "tool.started":

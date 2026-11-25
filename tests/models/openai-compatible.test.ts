@@ -43,7 +43,12 @@ describe("OpenAICompatibleModel", () => {
             created: 1,
             model: "test-model",
             choices: [],
-            usage: { prompt_tokens: 12, completion_tokens: 7, total_tokens: 19 },
+            usage: {
+              prompt_tokens: 12,
+              completion_tokens: 7,
+              total_tokens: 19,
+              prompt_tokens_details: { cached_tokens: 5, cache_write_tokens: 2 },
+            },
           })}\n\n`,
         );
         response.end("data: [DONE]\n\n");
@@ -56,6 +61,7 @@ describe("OpenAICompatibleModel", () => {
       const model = new OpenAICompatibleModel({
         apiKey: "test-key",
         baseURL: `http://127.0.0.1:${address.port}/v1`,
+        promptCacheKey: true,
       });
       const events: ModelEvent[] = [];
       for await (const event of model.stream(
@@ -63,6 +69,13 @@ describe("OpenAICompatibleModel", () => {
           model: "test-model",
           systemPrompt: "System rules",
           messages: [{ role: "user", source: "user", content: "Read math.mjs" }],
+          runtimeMessages: [{ role: "user", source: "harness", content: "Dynamic state" }],
+          cache: {
+            key: "workspace-key",
+            staticPrefixHash: "static",
+            conversationPrefixHash: "conversation",
+            requestHash: "request",
+          },
           tools: [
             {
               name: "read_file",
@@ -83,9 +96,20 @@ describe("OpenAICompatibleModel", () => {
           toolCalls: [{ id: "call-read", name: "read_file", arguments: '{"path":"math.mjs"}' }],
         },
       });
-      expect(events.some((event) => event.type === "usage" && event.inputTokens === 12)).toBe(true);
+      expect(events.filter((event) => event.type === "usage")).toEqual([
+        {
+          type: "usage",
+          inputTokens: 12,
+          outputTokens: 7,
+          uncachedInputTokens: 5,
+          cacheReadTokens: 5,
+          cacheWriteTokens: 2,
+        },
+      ]);
       const request = JSON.parse(requestBody);
       expect(request.messages[0]).toEqual({ role: "system", content: "System rules" });
+      expect(request.messages.at(-1)).toEqual({ role: "user", content: "Dynamic state" });
+      expect(request.prompt_cache_key).toBe("workspace-key");
       expect(request.tools[0].type).toBe("function");
     } finally {
       server.close();
@@ -111,6 +135,7 @@ describe("OpenAICompatibleModel", () => {
       const model = new OpenAICompatibleModel({
         apiKey: "test-key",
         baseURL: `http://127.0.0.1:${address.port}/v1`,
+        promptCacheKey: true,
       });
       for await (const _event of model.stream(
         {

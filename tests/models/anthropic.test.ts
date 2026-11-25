@@ -15,10 +15,16 @@ describe("AnthropicModel", () => {
       expect.objectContaining({ method: "POST" }),
     );
     const request = JSON.parse(fetchMock.mock.calls[0]?.[1].body as string) as {
-      messages: unknown[];
+      messages: { content: string | { cache_control?: unknown }[] }[];
+      system: { cache_control?: unknown }[];
       tools: unknown[];
     };
-    expect(request.messages).toEqual([{ role: "user", content: "Inspect" }]);
+    expect(request.system[0]?.cache_control).toEqual({ type: "ephemeral" });
+    expect(request.messages[0]?.content[0]).toMatchObject({
+      text: "Inspect",
+      cache_control: { type: "ephemeral" },
+    });
+    expect(request.messages[1]).toEqual({ role: "user", content: "Dynamic state" });
     expect(request.tools[0]).toMatchObject({ name: "read_file", input_schema: { type: "object" } });
     expect(events.filter((event) => event.type === "text.delta")).toEqual([
       { type: "text.delta", text: "Hello" },
@@ -31,8 +37,14 @@ describe("AnthropicModel", () => {
       },
     });
     expect(events.filter((event) => event.type === "usage")).toEqual([
-      { type: "usage", inputTokens: 12 },
-      { type: "usage", outputTokens: 5 },
+      {
+        type: "usage",
+        inputTokens: 12,
+        outputTokens: 5,
+        uncachedInputTokens: 2,
+        cacheReadTokens: 7,
+        cacheWriteTokens: 3,
+      },
     ]);
   });
 });
@@ -44,6 +56,12 @@ async function collect(model: AnthropicModel): Promise<ModelEvent[]> {
       model: "claude-test",
       systemPrompt: "System",
       messages: [{ role: "user", source: "user", content: "Inspect" }],
+      runtimeMessages: [{ role: "user", source: "harness", content: "Dynamic state" }],
+      cache: {
+        staticPrefixHash: "static",
+        conversationPrefixHash: "conversation",
+        requestHash: "request",
+      },
       tools: [{ name: "read_file", description: "Read", parameters: { type: "object" } }],
     },
     new AbortController().signal,
@@ -55,7 +73,16 @@ async function collect(model: AnthropicModel): Promise<ModelEvent[]> {
 
 function sseResponse(): Response {
   const frames = [
-    { type: "message_start", message: { usage: { input_tokens: 12 } } },
+    {
+      type: "message_start",
+      message: {
+        usage: {
+          input_tokens: 2,
+          cache_read_input_tokens: 7,
+          cache_creation_input_tokens: 3,
+        },
+      },
+    },
     {
       type: "content_block_start",
       index: 0,

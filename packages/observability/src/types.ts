@@ -7,6 +7,10 @@ export type TraceSpanStatus = "running" | "success" | "error" | "rejected" | "in
 export interface RunMetrics {
   inputTokens: number;
   outputTokens: number;
+  uncachedInputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cacheHitRate: number;
   modelCalls: number;
   failedModelCalls: number;
   modelDurationMs: number;

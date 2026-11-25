@@ -82,7 +82,13 @@ export interface TuiState {
   pendingInput: PendingUserInput | undefined;
   changedFiles: string[];
   verificationStatus: "running" | "passed" | "failed" | "not-required" | undefined;
-  usage: { inputTokens: number; outputTokens: number };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    uncachedInputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  };
   contextTokens: number;
   modelActivity: {
     active: boolean;

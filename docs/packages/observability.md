@@ -25,7 +25,7 @@ Observability 将公共运行事件转换为调试读模型。它不影响 Agent
 | `model.started/completed/failed` | 创建并完成模型 Span，记录耗时与错误 |
 | `tool.proposed/started/result` | 建立工具调用、审批、执行和结果关系 |
 | `verification.requested/finished` | 创建验证阶段并记录真实证据 |
-| `model.usage` | 聚合输入与输出 Token |
+| `model.usage` | 聚合总输入、输出、普通输入、缓存读取和缓存写入 Token |
 | `run.completed/failed/blocked/cancelled` | 推导运行终态和未完成 Span |
 
 每个 Span 保存 `spanId`、`kind`、`name`、`status`、`startedAt`、`endedAt`、`durationMs` 和关联 `eventIds`。未闭合 Span 在运行中显示 pending，在异常终态显示 incomplete。
@@ -66,7 +66,7 @@ interface TraceSpan {
 - Tool builders：按 callId 关联 proposed、approval、started 和 result。
 - Verification builders：按请求与完成事件构造验证阶段。
 - Messages：从公共用户、助手和工具事件构造只读消息视图。
-- Metrics：累加 input/output Token、模型调用、工具调用、失败工具、文件数和验证状态。
+- Metrics：累加总输入、输出、普通输入、缓存读取、缓存写入、模型调用、工具调用、失败工具、文件数和验证状态。`cacheHitRate = Σ cacheReadTokens / Σ inputTokens`，不是各轮命中率的算术平均；旧事件缺少缓存字段时按普通输入兼容。
 
 最终 operationSpans 按 startedAt 排序，再与 run Span 组成完整 Trace。持续时间和 endedAt 都从事件 timestamp 计算，而非读取观测时的当前时间，保证离线重放结果稳定。
 

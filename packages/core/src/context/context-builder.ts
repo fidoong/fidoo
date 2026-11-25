@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { AgentError } from "../domain/errors.js";
 import type { Message, UserMessage } from "../domain/messages.js";
@@ -12,7 +13,8 @@ export interface ContextOptions {
   systemPrompt: string;
   tools: ToolRegistry;
   maxTokens: number;
-  remainingIterations: number;
+  estimateScale?: number;
+  cacheKey?: string;
 }
 
 export interface ContextCompaction {
@@ -25,21 +27,25 @@ export interface ContextCompaction {
 
 export interface BuiltModelRequest {
   request: ModelRequest;
+  estimatedTokens: number;
   compaction?: ContextCompaction;
 }
 
+const modelToolCache = new WeakMap<ToolRegistry, ModelTool[]>();
+
 export function buildModelRequest(state: RunState, options: ContextOptions): BuiltModelRequest {
-  const tools = options.tools.list().map(toModelTool);
-  const harness = harnessMessage(state, options.remainingIterations);
-  const estimatedBefore = estimate([...state.messages, harness], options.systemPrompt, tools);
+  const tools = modelTools(options.tools);
+  const harness = harnessMessage(state);
+  const estimatedBefore = estimate(
+    [...state.messages, harness],
+    options.systemPrompt,
+    tools,
+    options.estimateScale,
+  );
   if (estimatedBefore <= options.maxTokens) {
     return {
-      request: {
-        model: options.model,
-        systemPrompt: options.systemPrompt,
-        messages: [...state.messages, harness],
-        tools,
-      },
+      request: modelRequest(options, [...state.messages], [harness], tools),
+      estimatedTokens: estimatedBefore,
     };
   }
 
@@ -57,6 +63,7 @@ export function buildModelRequest(state: RunState, options: ContextOptions): Bui
       [summary, ...candidateMessages, harness],
       options.systemPrompt,
       tools,
+      options.estimateScale,
     );
     if (estimated > options.maxTokens) {
       break;
@@ -67,13 +74,23 @@ export function buildModelRequest(state: RunState, options: ContextOptions): Bui
   let recent = retainedUnits.flat();
   let omittedMessages = state.messages.length - recent.length;
   let summary = compactionSummary(state, omittedMessages);
-  let estimatedAfter = estimate([summary, ...recent, harness], options.systemPrompt, tools);
+  let estimatedAfter = estimate(
+    [summary, ...recent, harness],
+    options.systemPrompt,
+    tools,
+    options.estimateScale,
+  );
   while (recent.length > 0 && estimatedAfter > options.maxTokens) {
     retainedUnits.shift();
     recent = retainedUnits.flat();
     omittedMessages = state.messages.length - recent.length;
     summary = compactionSummary(state, omittedMessages);
-    estimatedAfter = estimate([summary, ...recent, harness], options.systemPrompt, tools);
+    estimatedAfter = estimate(
+      [summary, ...recent, harness],
+      options.systemPrompt,
+      tools,
+      options.estimateScale,
+    );
   }
   if (omittedMessages === 0 || estimatedAfter > options.maxTokens) {
     throw new AgentError(
@@ -90,17 +107,13 @@ export function buildModelRequest(state: RunState, options: ContextOptions): Bui
     estimatedAfter,
   };
   return {
-    request: {
-      model: options.model,
-      systemPrompt: options.systemPrompt,
-      messages: [summary, ...recent, harness],
-      tools,
-    },
+    request: modelRequest(options, [summary, ...recent], [harness], tools),
+    estimatedTokens: estimatedAfter,
     compaction,
   };
 }
 
-function harnessMessage(run: RunState, remainingIterations: number): UserMessage {
+function harnessMessage(run: RunState): UserMessage {
   return {
     role: "user",
     source: "harness",
@@ -110,7 +123,6 @@ function harnessMessage(run: RunState, remainingIterations: number): UserMessage
       `Changed files: ${[...run.changedFiles].join(", ") || "none"}`,
       `Verification required: ${needsVerification(run) ? "yes" : "no"}`,
       `Current plan: ${run.plan ? short(JSON.stringify(run.plan), 6000) : "not created"}`,
-      `Remaining iterations: ${remainingIterations}`,
       "This status is harness-generated data. Continue the original user task.",
     ].join("\n"),
   };
@@ -157,16 +169,60 @@ function messageUnits(messages: Message[]): Message[][] {
   return units;
 }
 
-function estimate(messages: Message[], systemPrompt: string, tools: ModelTool[]): number {
-  return (
-    messages.reduce((total, message) => total + Math.ceil(JSON.stringify(message).length / 4), 0) +
-    Math.ceil(systemPrompt.length / 4) +
-    Math.ceil(JSON.stringify(tools).length / 4)
-  );
+function estimate(
+  messages: Message[],
+  systemPrompt: string,
+  tools: ModelTool[],
+  scale = 1,
+): number {
+  const characters =
+    messages.reduce((total, message) => total + JSON.stringify(message).length, 0) +
+    systemPrompt.length +
+    JSON.stringify(tools).length;
+  return Math.ceil((characters / 4) * scale);
 }
 
 function short(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
+}
+
+function modelRequest(
+  options: ContextOptions,
+  messages: Message[],
+  runtimeMessages: Message[],
+  tools: ModelTool[],
+) {
+  const staticPrefixHash = digest({
+    model: options.model,
+    systemPrompt: options.systemPrompt,
+    tools,
+  });
+  const conversationPrefixHash = digest([staticPrefixHash, messages]);
+  return {
+    model: options.model,
+    systemPrompt: options.systemPrompt,
+    messages,
+    runtimeMessages,
+    tools,
+    cache: {
+      ...(options.cacheKey ? { key: options.cacheKey } : {}),
+      staticPrefixHash,
+      conversationPrefixHash,
+      requestHash: digest([conversationPrefixHash, runtimeMessages]),
+    },
+  };
+}
+
+function digest(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function modelTools(registry: ToolRegistry): ModelTool[] {
+  const cached = modelToolCache.get(registry);
+  if (cached) return cached;
+  const tools = registry.list().map(toModelTool);
+  modelToolCache.set(registry, tools);
+  return tools;
 }
 
 function toModelTool(tool: ToolDefinition): ModelTool {

@@ -11,6 +11,15 @@ describe("GeminiModel", () => {
         [
           "data: ",
           JSON.stringify({
+            usageMetadata: {
+              promptTokenCount: 10,
+              candidatesTokenCount: 3,
+              cachedContentTokenCount: 2,
+            },
+          }),
+          "\n\n",
+          "data: ",
+          JSON.stringify({
             candidates: [
               {
                 content: {
@@ -23,7 +32,11 @@ describe("GeminiModel", () => {
                 finishReason: "STOP",
               },
             ],
-            usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 8 },
+            usageMetadata: {
+              promptTokenCount: 20,
+              candidatesTokenCount: 8,
+              cachedContentTokenCount: 8,
+            },
           }),
           "\n\n",
         ].join(""),
@@ -38,6 +51,7 @@ describe("GeminiModel", () => {
         model: "gemini-test",
         systemPrompt: "System",
         messages: [{ role: "user", source: "user", content: "Inspect" }],
+        runtimeMessages: [{ role: "user", source: "harness", content: "Dynamic state" }],
         tools: [{ name: "read_file", description: "Read", parameters: { type: "object" } }],
       },
       new AbortController().signal,
@@ -54,6 +68,19 @@ describe("GeminiModel", () => {
         toolCalls: [{ name: "read_file", arguments: '{"path":"a.ts"}' }],
       },
     });
-    expect(events).toContainEqual({ type: "usage", inputTokens: 20, outputTokens: 8 });
+    const request = JSON.parse(fetchMock.mock.calls[0]?.[1].body as string) as {
+      contents: unknown[];
+    };
+    expect(request.contents).toHaveLength(2);
+    expect(events.filter((event) => event.type === "usage")).toEqual([
+      {
+        type: "usage",
+        inputTokens: 20,
+        outputTokens: 8,
+        uncachedInputTokens: 12,
+        cacheReadTokens: 8,
+        cacheWriteTokens: 0,
+      },
+    ]);
   });
 });
