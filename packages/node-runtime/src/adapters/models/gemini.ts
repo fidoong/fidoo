@@ -114,6 +114,9 @@ function toGeminiContent(message: Message) {
             response: { result: message.content, isError: message.isError },
           },
         },
+        ...(message.images ?? []).map((image) => ({
+          inlineData: { mimeType: image.mimeType, data: image.data ?? "" },
+        })),
       ],
     };
   }

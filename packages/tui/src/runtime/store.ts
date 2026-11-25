@@ -25,6 +25,7 @@ export function initialTuiState(): TuiState {
     tools: [],
     taskPlan: undefined,
     pendingApproval: undefined,
+    pendingInput: undefined,
     changedFiles: [],
     verificationStatus: undefined,
     usage: { inputTokens: 0, outputTokens: 0 },
@@ -46,7 +47,7 @@ export function initialTuiState(): TuiState {
 }
 
 export function isActivePhase(phase: TuiState["phase"]): boolean {
-  return phase === "starting" || phase === "running" || phase === "awaiting_approval";
+  return ["starting", "running", "awaiting_approval", "awaiting_input"].includes(phase);
 }
 
 export function markStarting(state: TuiState): TuiState {
@@ -63,13 +64,20 @@ export function markStarting(state: TuiState): TuiState {
     reasoningEndedAt: undefined,
     reasoningMessageId: undefined,
     verificationStatus: undefined,
+    pendingInput: undefined,
     notice: undefined,
     error: undefined,
   };
 }
 
 export function markControllerError(state: TuiState, error: string): TuiState {
-  return finishReasoning({ ...state, phase: "failed", error, pendingApproval: undefined });
+  return finishReasoning({
+    ...state,
+    phase: "failed",
+    error,
+    pendingApproval: undefined,
+    pendingInput: undefined,
+  });
 }
 
 export function appendReasoningText(state: TuiState, text: string): TuiState {
@@ -179,6 +187,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         reasoningStartedAt: undefined,
         reasoningEndedAt: undefined,
         verificationStatus: undefined,
+        pendingInput: undefined,
         error: undefined,
       };
     case "context.compacted":
@@ -335,6 +344,15 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
           startedAt: Date.parse(event.timestamp),
         }),
       };
+    case "user_input.required":
+      return {
+        ...state,
+        phase: "awaiting_input",
+        pendingInput: {
+          callId: String(event.payload.callId),
+          questions: event.payload.questions as NonNullable<TuiState["pendingInput"]>["questions"],
+        },
+      };
     case "tool.result": {
       const result = event.payload.result as {
         callId: string;
@@ -351,7 +369,12 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         : undefined;
       return {
         ...state,
-        phase: state.pendingApproval?.call.id === result.callId ? "running" : state.phase,
+        phase:
+          state.pendingApproval?.call.id === result.callId ||
+          state.pendingInput?.callId === result.callId
+            ? "running"
+            : state.phase,
+        pendingInput: state.pendingInput?.callId === result.callId ? undefined : state.pendingInput,
         pendingApproval:
           state.pendingApproval?.call.id === result.callId ? undefined : state.pendingApproval,
         tools: updateTool(state.tools, result.callId, {
@@ -386,6 +409,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         streamingText: "",
         streamingBlocksStarted: false,
         pendingApproval: undefined,
+        pendingInput: undefined,
         verificationStatus:
           state.verificationStatus ??
           (event.payload.verification === "passed" ? "passed" : "not-required"),
@@ -413,6 +437,7 @@ function terminal(
     streamingText: "",
     streamingBlocksStarted: false,
     pendingApproval: undefined,
+    pendingInput: undefined,
   });
 }
 

@@ -1,10 +1,11 @@
-import type { ArtifactReference, BackgroundTask } from "@fidoo/protocol";
+import type { ArtifactReference, BackgroundTask, UserInputQuestion } from "@fidoo/protocol";
 
 export type TuiPhase =
   | "idle"
   | "starting"
   | "running"
   | "awaiting_approval"
+  | "awaiting_input"
   | "completed"
   | "blocked"
   | "failed"
@@ -42,6 +43,11 @@ export interface PendingApproval {
   reason: string;
 }
 
+export interface PendingUserInput {
+  callId: string;
+  questions: UserInputQuestion[];
+}
+
 export interface ViewTaskPlanStep {
   id: string;
   title: string;
@@ -73,6 +79,7 @@ export interface TuiState {
   tools: ToolCard[];
   taskPlan: ViewTaskPlan | undefined;
   pendingApproval: PendingApproval | undefined;
+  pendingInput: PendingUserInput | undefined;
   changedFiles: string[];
   verificationStatus: "running" | "passed" | "failed" | "not-required" | undefined;
   usage: { inputTokens: number; outputTokens: number };

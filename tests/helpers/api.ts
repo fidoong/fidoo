@@ -5,6 +5,7 @@ import {
   BASE_SYSTEM_PROMPT,
   PolicyEngine,
   RunService,
+  requestUserInputTool,
   ToolRegistry,
   updatePlanTool,
 } from "@fidoo/core";
@@ -28,15 +29,20 @@ export function testApi(
   const tasks = new BackgroundTaskManager();
   const model = new FakeModel(responses);
   const api = new AgentApi({
-    createRunService(observer, approval) {
+    createRunService(observer, approval, userInput) {
       return new RunService({
         model,
         modelName: "fake-model",
         store,
         workspace,
         artifacts,
-        tools: new ToolRegistry([updatePlanTool, ...createCodingTools(tasks)]),
+        tools: new ToolRegistry([
+          updatePlanTool,
+          requestUserInputTool,
+          ...createCodingTools(tasks),
+        ]),
         approval: approval ?? approveAll,
+        userInput,
         policy: new PolicyEngine(options.permission ?? "auto"),
         systemPrompt: BASE_SYSTEM_PROMPT,
         maxIterations: 10,

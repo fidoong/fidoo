@@ -4,6 +4,7 @@ import type {
   ApprovalRespondParams,
   ArtifactReadParams,
   BackgroundTaskEvent,
+  InputRespondParams,
   ProviderModelsParams,
   RunIdParams,
   RunListParams,
@@ -38,6 +39,7 @@ export class AgentClient {
   readonly run: RunClient;
   readonly artifacts: ArtifactClient;
   readonly approval: ApprovalClient;
+  readonly input: UserInputClient;
   readonly settings: SettingsClient;
   readonly tasks: TaskClient;
 
@@ -46,6 +48,7 @@ export class AgentClient {
     this.run = new RunClient(transport);
     this.artifacts = new ArtifactClient(transport);
     this.approval = new ApprovalClient(transport);
+    this.input = new UserInputClient(transport);
     this.settings = new SettingsClient(transport);
     this.tasks = new TaskClient(transport);
   }
@@ -150,6 +153,14 @@ class TaskClient {
     for await (const event of this.transport.subscribe("task.subscribe", {})) {
       yield backgroundTaskEventSchema.parse(event);
     }
+  }
+}
+
+class UserInputClient {
+  constructor(private readonly transport: AgentTransport) {}
+
+  async respond(params: InputRespondParams) {
+    return apiResultSchema.parse(await this.transport.call("input.respond", params));
   }
 }
 

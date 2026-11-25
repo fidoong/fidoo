@@ -42,6 +42,7 @@ export const runSnapshotSchema = z.object({
 | Run | `start/resume/steer/cancel/get/list/trace` | 任务生命周期与历史 |
 | Subscription | `run.subscribe` | 从 `afterSeq` 恢复并持续订阅 |
 | Approval | `approval.respond` | 对指定 `runId + callId` 做出一次决策 |
+| User input | `input.respond` | 提交 `request_user_input` 的结构化答案 |
 | Artifact | `artifact.read` | 分页读取受限大输出 |
 | Task | `task.list/output/stop/subscribe` | 管理持久后台任务 |
 | Settings | `settings.get/update/models` | 读取连接、更新设置、发现模型 |

@@ -1,3 +1,4 @@
+import type { UserInputQuestion } from "../ports/user-input.js";
 import type { AssistantMessage, ToolCall, ToolObservation, UserMessage } from "./messages.js";
 import type { TaskPlan } from "./plan.js";
 import type { VerificationEvidence } from "./verification.js";
@@ -60,6 +61,7 @@ export type AgentEvent =
     >
   | EventBase<"tool.decided", { callId: string; decision: "approved" | "rejected"; reason: string }>
   | EventBase<"tool.started", { callId: string }>
+  | EventBase<"user_input.required", { callId: string; questions: UserInputQuestion[] }>
   | EventBase<"tool.result", { result: ToolObservation }>
   | EventBase<"verification.requested", { reason: string; attempt: number }>
   | EventBase<
@@ -117,6 +119,7 @@ export const EVENT_TYPES = [
   "tool.approval_required",
   "tool.decided",
   "tool.started",
+  "user_input.required",
   "tool.result",
   "verification.requested",
   "verification.finished",

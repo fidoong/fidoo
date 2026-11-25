@@ -146,6 +146,7 @@ generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后
 | `components/dialogs/output-dialog.tsx` | 短输出本地分页，大输出按 Artifact API 加载 |
 | `components/dialogs/sessions-dialog.tsx` | 会话列表、选择和恢复 |
 | `components/dialogs/settings-dialog.tsx` | Provider 连接、模型发现、校验和保存 |
+| `components/dialogs/user-input-dialog.tsx` | 多题单选、多选、自由输入、答案校验和提交状态 |
 | `components/dialogs/trace-dialog.tsx` | 公共事件轨迹查看 |
 | `components/layout/status-bar.tsx` | phase、runId、文件数、上下文、Token、Provider 和后台任务 |
 | `components/layout/spinner.tsx` | 使用共享 animation clock，避免每个 Spinner 独立定时器 |

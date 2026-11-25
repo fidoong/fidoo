@@ -13,6 +13,8 @@ import type { ApprovalPort } from "../ports/approval.js";
 import type { ArtifactStore } from "../ports/artifacts.js";
 import type { EventStore } from "../ports/event-store.js";
 import type { ModelPort } from "../ports/model.js";
+import type { SubagentPort } from "../ports/subagent.js";
+import type { UserInputPort, UserInputQuestion } from "../ports/user-input.js";
 import { LoopDetector } from "../runtime/loop-detector.js";
 import type { PolicyEngine } from "../runtime/policy-engine.js";
 import type { ToolRegistry } from "../runtime/tool-registry.js";
@@ -33,6 +35,8 @@ export interface AgentLoopOptions {
   tools: ToolRegistry;
   approval: ApprovalPort;
   policy: PolicyEngine;
+  userInput?: UserInputPort;
+  subagents?: SubagentPort;
   systemPrompt: string;
   observer?: RuntimeObserver;
   maxIterations?: number;
@@ -158,6 +162,7 @@ export class AgentLoop {
     if (built.compaction) {
       await this.append("context.compacted", built.compaction);
     }
+    built.request.messages = await this.hydrateImages(built.request.messages);
     await this.append("model.started", { iteration, model: this.options.modelName });
     const startedAt = Date.now();
     let completed: AssistantMessage | undefined;
@@ -257,6 +262,22 @@ export class AgentLoop {
     return true;
   }
 
+  private async hydrateImages(messages: RunState["messages"]): Promise<RunState["messages"]> {
+    return Promise.all(
+      messages.map(async (message) => {
+        if (message.role !== "tool" || !message.images?.length) return message;
+        const images = await Promise.all(
+          message.images.map(async (image) => ({
+            ...image,
+            data: (await this.options.artifacts.read(this.runId, image.artifactId, 0, 1000))
+              .content,
+          })),
+        );
+        return { ...message, images };
+      }),
+    );
+  }
+
   private async executeCall(call: ToolCall, signal: AbortSignal): Promise<void> {
     if (this.isBlocked()) return;
     await this.append("tool.proposed", { call });
@@ -319,13 +340,22 @@ export class AgentLoop {
     }
 
     await this.append("tool.started", { callId: call.id });
+    if (tool.interaction === "user-input") {
+      await this.append("user_input.required", {
+        callId: call.id,
+        questions: (input as { questions: UserInputQuestion[] }).questions,
+      });
+    }
     try {
       this.throwIfCancelled(signal);
       const result = await tool.execute(input, {
         runId: this.runId,
+        callId: call.id,
         cwd: this.state.cwd,
         signal,
         artifacts: this.options.artifacts,
+        ...(this.options.userInput ? { userInput: this.options.userInput } : {}),
+        ...(this.options.subagents ? { subagents: this.options.subagents } : {}),
         onOutput: (text) => this.options.observer?.onToolOutputDelta?.(this.runId, call.id, text),
       });
       await this.append("tool.result", {
@@ -338,6 +368,8 @@ export class AgentLoop {
           ...(result.artifacts ? { artifacts: result.artifacts } : {}),
           ...(result.changedFiles ? { changedFiles: result.changedFiles } : {}),
           ...(result.verification ? { verification: result.verification } : {}),
+          ...(result.verifications ? { verifications: result.verifications } : {}),
+          ...(result.images ? { images: result.images } : {}),
         },
       });
       if (result.planUpdate) {

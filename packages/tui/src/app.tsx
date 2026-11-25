@@ -20,11 +20,13 @@ import { SettingsDialog } from "./components/dialogs/settings-dialog.js";
 import { StatusDialog } from "./components/dialogs/status-dialog.js";
 import { ThemeDialog } from "./components/dialogs/theme-dialog.js";
 import { TraceDialog } from "./components/dialogs/trace-dialog.js";
+import { UserInputDialog } from "./components/dialogs/user-input-dialog.js";
 import { Composer } from "./components/input/composer.js";
 import { Welcome } from "./components/layout/brand.js";
 import { StatusBar } from "./components/layout/status-bar.js";
 import type { AgentController } from "./runtime/agent-controller.js";
 import { isActivePhase } from "./runtime/store.js";
+import type { PendingUserInput } from "./runtime/types.js";
 import {
   applyTheme,
   DEFAULT_THEME,
@@ -63,6 +65,7 @@ type DialogState =
   | { type: "status" }
   | { type: "reasoning" }
   | { type: "settings"; settings: ProviderSettings }
+  | { type: "user_input"; input: PendingUserInput }
   | OutputDialogState;
 
 export function TuiApp({
@@ -114,6 +117,15 @@ export function TuiApp({
       mounted = false;
     };
   }, [controller]);
+
+  useEffect(() => {
+    if (state.pendingInput) {
+      const input = state.pendingInput;
+      setDialog((current) =>
+        current?.type === "user_input" ? current : { type: "user_input", input },
+      );
+    }
+  }, [state.pendingInput]);
 
   const showSettings = async () => {
     try {
@@ -354,7 +366,7 @@ export function TuiApp({
         setDialog(undefined);
       } else if (dialog.type === "output" && key.ctrl && input === "o") {
         setDialog(undefined);
-      } else if (key.escape) {
+      } else if (key.escape && dialog.type !== "user_input") {
         setDialog(undefined);
       } else if (dialog.type === "output" && (key.downArrow || input === "j")) {
         pageOutput(1);
@@ -463,6 +475,14 @@ export function TuiApp({
           />
         ) : dialog?.type === "output" ? (
           <OutputDialog {...outputView(dialog)} />
+        ) : dialog?.type === "user_input" ? (
+          <UserInputDialog
+            questions={dialog.input.questions}
+            onSubmit={async (answers) => {
+              await controller.respondInput(dialog.input.callId, answers);
+              setDialog(undefined);
+            }}
+          />
         ) : null}
         {state.notice ? (
           <Text {...(state.phase === "completed" ? { color: theme.success } : { dimColor: true })}>

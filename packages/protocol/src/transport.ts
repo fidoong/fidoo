@@ -13,6 +13,7 @@ export const API_METHODS = [
   "settings.update",
   "settings.models",
   "approval.respond",
+  "input.respond",
   "task.list",
   "task.output",
   "task.stop",

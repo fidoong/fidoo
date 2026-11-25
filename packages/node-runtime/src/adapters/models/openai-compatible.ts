@@ -174,7 +174,21 @@ function toProviderMessages(
 ): ChatCompletionMessageParam[] {
   return [
     { role: "system", content: request.systemPrompt },
-    ...request.messages.map((message) => toProviderMessage(message, passReasoningContent)),
+    ...request.messages.flatMap((message) => {
+      const primary = toProviderMessage(message, passReasoningContent);
+      if (message.role !== "tool" || !message.images?.length) return [primary];
+      const imageMessage: ChatCompletionMessageParam = {
+        role: "user",
+        content: [
+          { type: "text", text: `Images returned by ${message.name}:` },
+          ...message.images.map((image) => ({
+            type: "image_url" as const,
+            image_url: { url: `data:${image.mimeType};base64,${image.data ?? ""}` },
+          })),
+        ],
+      };
+      return [primary, imageMessage];
+    }),
   ];
 }
 

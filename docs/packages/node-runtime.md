@@ -96,6 +96,19 @@ macOS/Linux 使用独立进程组。取消或超时先向进程组发送 SIGTERM
 | `task_stop` | taskId | 停止整个进程组并持久 stopped 状态 |
 | `update_plan` | 标题与稳定步骤列表 | 返回计划更新，由 AgentLoop 写 `plan.updated` |
 | `report_blocked` | 具体阻塞原因 | 工具成功后 AgentLoop 写 `run.blocked` |
+| `apply_patch` | 多文件、多个精确替换及各自 expected_revision | 全部预校验后统一写入，写入失败回滚 |
+| `move_file` | source_path、target_path、源 revision | 工作区内重命名/移动，不覆盖已有目标 |
+| `delete_file` | path、expected_revision | 只删除普通文件并保留恢复快照 |
+| `workspace_status` | 当前 runId | 返回新增/修改/删除、增删行与 canUndo |
+| `workspace_diff` | 可选 paths | 返回首次 Agent 修改前的标准 unified diff |
+| `undo_file` / `undo_run` | path 或当前 runId | 高危审批后恢复，外部修改会拒绝 |
+| `run_required_checks` | checkIds、onlyAffected | 逐条执行项目检查并返回 verifications |
+| `read_many_files` | 最多 20 个 paths、共享分页 | 并行读取，保留每文件 revision |
+| `list_directory` | path、limit | 只列直接子项，目录带 `/` |
+| `read_image` | PNG/JPEG/WebP/GIF path | 魔数校验、5 MiB 限制、Artifact 图片引用 |
+| `delegate_task` | 聚焦的只读研究 task | 独立子 run、只读工具、无嵌套代理 |
+| `web_search` | query、limit | Tavily/Brave/SearXNG 结构化结果 |
+| `web_fetch` | 公开 URL、max_chars | 限制重定向、类型、大小和私网目标 |
 
 所有工具通过 `ToolContext` 获得 runId、根 cwd、AbortSignal、ArtifactStore 和 onOutput。工具不能自行绕过 context.cwd 访问另一项目。
 
@@ -181,6 +194,20 @@ MemoryArtifactStore 提供同一接口，供 AgentLoop 和工具测试验证截�
 `loadPermissionPolicy` 合并内置、用户、项目和显式策略，记录规则来源。项目文件被降权，不能放宽到 auto 或 allow；显式配置路径缺失、未知字段和空规则会启动失败。
 
 `InteractiveApproval` 用于直接终端审批，`RejectApproval` 是非交互服务默认拒绝实现，真正 TUI 审批由 API 的 ApprovalBroker 注入。
+
+## 变更快照与撤销实现
+
+`WorkspaceChangeManager` 在首次 mutation 前保存 before 内容、beforeRevision 和 lastRevision。记录位于 `<FIDOO_HOME>/changes/<runId>/<path-hash>/`，包含 record.json、before.txt 和 change.lock；纯内存 Manager 用于测试。
+
+`workspace_status` 对比 before 与当前文件，计算 added/modified/deleted、增删行和 unified diff。新增后又被删除的文件不会留下无效变更。`afterMutation` 更新 lastRevision，undo 前要求当前 revision 仍等于 lastRevision；用户或外部进程的后续修改会阻止覆盖。
+
+`undoRun` 先检查全部记录再恢复，避免已知冲突造成部分撤销。`apply_patch` 则先计算全部目标内容，写入异常时恢复本批已写文件。两条路径解决不同的原子性边界。
+
+## WebSearch 配置与 WebFetch 安全
+
+`.fidoo.json` 的 `search` 只允许 provider 和 baseURL，API Key 从 `FIDOO_SEARCH_API_KEY` 注入。仅设置环境 Key 时默认 Tavily；SearXNG 必须提供 baseURL。Tavily、Brave 和 SearXNG 的响应统一为 title/url/snippet。
+
+`web_fetch` 手动处理最多五次重定向，每个目标都重新校验。默认拒绝 URL 凭证、localhost、私网 IP、非文本内容和超过 1 MiB 的响应；HTML 去除脚本、样式和头部后转换为有界纯文本。DNS 检查不能替代完整网络沙箱，企业环境仍应使用出口代理和网络策略。
 
 ## 源码阅读地图
 

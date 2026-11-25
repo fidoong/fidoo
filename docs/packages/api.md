@@ -91,6 +91,7 @@ subscribe + buffer
 | `run.list` | EventStore.list | 按公共 Summary 映射会话 |
 | `run.trace` | EventStore.load | 返回映射后的公共持久事件 |
 | `approval.respond` | 参数 Schema → 幂等/队列 → ApprovalBroker.respond | 只解析指定 pending 调用 |
+| `input.respond` | 参数 Schema → 幂等/队列 → UserInputBroker.respond | 校验问题答案、选项与多选约束，闭合 request_user_input |
 | `artifact.read` | ArtifactStore.read | 按受限 id 和分页参数读取 |
 | `task.list/output/stop` | AgentTaskPort | 查询、分页读取或停止真实进程组 |
 | `settings.get/update/models` | AgentSettingsPort | 读取、替换 RunService 工厂或发现模型 |

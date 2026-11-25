@@ -20,12 +20,25 @@ export interface AssistantMessage {
   toolCalls?: ToolCall[];
 }
 
+export interface ImageReference {
+  artifactId: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  name: string;
+  bytes: number;
+  data?: string;
+}
+
+export interface ImageContent extends ImageReference {
+  data: string;
+}
+
 export interface ToolMessage {
   role: "tool";
   toolCallId: string;
   name: string;
   content: string;
   isError: boolean;
+  images?: ImageReference[];
 }
 
 export type Message = UserMessage | AssistantMessage | ToolMessage;
@@ -39,4 +52,6 @@ export interface ToolObservation {
   artifacts?: ArtifactReference[];
   changedFiles?: string[];
   verification?: VerificationEvidence;
+  verifications?: VerificationEvidence[];
+  images?: ImageReference[];
 }

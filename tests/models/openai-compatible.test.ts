@@ -93,6 +93,67 @@ describe("OpenAICompatibleModel", () => {
     }
   });
 
+  it("maps tool images to an OpenAI-compatible multimodal user message", async () => {
+    let requestBody = "";
+    const server = createServer((request, response) => {
+      request.on("data", (chunk) => {
+        requestBody += String(chunk);
+      });
+      request.on("end", () => {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(`${sse({ content: "ok" })}data: [DONE]\n\n`);
+      });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const address = server.address() as AddressInfo;
+      const model = new OpenAICompatibleModel({
+        apiKey: "test-key",
+        baseURL: `http://127.0.0.1:${address.port}/v1`,
+      });
+      for await (const _event of model.stream(
+        {
+          model: "vision-model",
+          systemPrompt: "System",
+          messages: [
+            {
+              role: "tool",
+              toolCallId: "image-call",
+              name: "read_image",
+              content: "image metadata",
+              isError: false,
+              images: [
+                {
+                  artifactId: "a".repeat(64),
+                  mimeType: "image/png",
+                  name: "pixel.png",
+                  bytes: 3,
+                  data: "YWJj",
+                },
+              ],
+            },
+          ],
+          tools: [],
+        },
+        new AbortController().signal,
+      )) {
+        void _event;
+      }
+      const request = JSON.parse(requestBody);
+      expect(request.messages[2]).toMatchObject({
+        role: "user",
+        content: [
+          { type: "text" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,YWJj" } },
+        ],
+      });
+    } finally {
+      server.close();
+      await once(server, "close");
+    }
+  });
+
   it("reports timeout, model and a sanitized endpoint", async () => {
     const server = createServer(() => undefined);
     server.listen(0, "127.0.0.1");

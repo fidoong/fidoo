@@ -7,18 +7,22 @@ import type {
   ResolvedPermissionPolicy,
   RunService,
   RuntimeObserver,
+  UserInputPort,
   WorkspacePort,
 } from "@fidoo/core";
 import {
   RunService as CoreRunService,
+  delegateTaskTool,
   loadProjectInstructions,
   PolicyEngine,
+  requestUserInputTool,
   ToolRegistry,
   updatePlanTool,
   withProjectInstructions,
 } from "@fidoo/core";
 import { providerDefinition } from "@fidoo/protocol";
 import { RejectApproval } from "./adapters/approval/reject.js";
+import { WorkspaceChangeManager } from "./adapters/changes/workspace-change-manager.js";
 import { AnthropicModel } from "./adapters/models/anthropic.js";
 import { DeepSeekModel } from "./adapters/models/deepseek.js";
 import { GeminiModel } from "./adapters/models/gemini.js";
@@ -27,15 +31,22 @@ import { UnavailableModel } from "./adapters/models/unavailable.js";
 import { loadPermissionPolicy } from "./adapters/policy/file-policy.js";
 import { FileArtifactStore } from "./adapters/storage/file-artifact-store.js";
 import { FileEventStore } from "./adapters/storage/file-event-store.js";
+import { RunServiceSubagent } from "./adapters/subagents/run-service-subagent.js";
 import { LocalWorkspace } from "./adapters/system/local-workspace.js";
 import { BackgroundTaskManager } from "./adapters/tasks/background-task-manager.js";
 import { createCodingTools } from "./adapters/tools/registry.js";
+import { loadWebSearchConfig } from "./adapters/web/config.js";
+import { createWebTools } from "./adapters/web/tools.js";
 import type { NodeRuntimeConfig } from "./config.js";
 import { loadRequiredChecks } from "./project-verification.js";
 
 export interface NodeRuntime {
   runService: RunService;
-  createRunService(observer?: RuntimeObserver, approval?: ApprovalPort): RunService;
+  createRunService(
+    observer?: RuntimeObserver,
+    approval?: ApprovalPort,
+    userInput?: UserInputPort,
+  ): RunService;
   eventStore: EventStore;
   artifacts: ArtifactStore;
   workspace: WorkspacePort;
@@ -52,6 +63,7 @@ export async function createNodeRuntime(
 ): Promise<NodeRuntime> {
   const instructions = await loadProjectInstructions(config.cwd);
   const requiredChecks = await loadRequiredChecks(config.cwd);
+  const webSearch = await loadWebSearchConfig(config.cwd);
   const permission = await loadPermissionPolicy(config);
   const permissionMode: PermissionMode = config.readOnly
     ? "read-only"
@@ -62,15 +74,43 @@ export async function createNodeRuntime(
   const artifacts = new FileArtifactStore(config.dataHome);
   const workspace = new LocalWorkspace();
   const tasks = taskManager ?? new BackgroundTaskManager(config.dataHome);
-  const createService = (serviceObserver?: RuntimeObserver, serviceApproval?: ApprovalPort) =>
+  const changes = new WorkspaceChangeManager(config.dataHome);
+  const subagents = new RunServiceSubagent({
+    model: createModel(config),
+    modelName: config.model,
+    store: eventStore,
+    workspace,
+    artifacts,
+    tools: new ToolRegistry(
+      createCodingTools(tasks, requiredChecks, changes).filter((tool) => tool.effect === "read"),
+    ),
+    approval: new RejectApproval(),
+    policy: new PolicyEngine("read-only"),
+    systemPrompt: `${withProjectInstructions(instructions)}\n\nYou are a read-only research subagent. Inspect the workspace and return concrete findings to the parent. Do not attempt writes, commands, user questions or nested delegation.`,
+    maxIterations: Math.min(config.maxIterations, 12),
+    maxContextTokens: config.maxContextTokens ?? 100_000,
+  });
+  const createService = (
+    serviceObserver?: RuntimeObserver,
+    serviceApproval?: ApprovalPort,
+    userInput?: UserInputPort,
+  ) =>
     new CoreRunService({
       model: createModel(config),
       modelName: config.model,
       store: eventStore,
       workspace,
       artifacts,
-      tools: new ToolRegistry([updatePlanTool, ...createCodingTools(tasks, requiredChecks)]),
+      tools: new ToolRegistry([
+        updatePlanTool,
+        requestUserInputTool,
+        delegateTaskTool,
+        ...createCodingTools(tasks, requiredChecks, changes),
+        ...createWebTools(webSearch),
+      ]),
       approval: serviceApproval ?? new RejectApproval(),
+      ...(userInput ? { userInput } : {}),
+      subagents,
       policy: new PolicyEngine(permissionMode, permission.rules),
       systemPrompt: withProjectInstructions(instructions, requiredChecks),
       requiredChecks,

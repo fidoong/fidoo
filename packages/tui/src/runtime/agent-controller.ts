@@ -114,6 +114,11 @@ export class AgentController {
     }
   }
 
+  async respondInput(callId: string, answers: Record<string, string[]>): Promise<void> {
+    if (!this.state.runId) throw new Error("No active run is available for user input");
+    await this.client.input.respond({ runId: this.state.runId, callId, answers });
+  }
+
   async steer(task: string): Promise<void> {
     if (!this.state.runId || !isActivePhase(this.state.phase)) {
       throw new Error("No active run is available for steering");

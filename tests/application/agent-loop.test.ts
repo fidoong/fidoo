@@ -236,6 +236,43 @@ describe("AgentLoop", () => {
     });
   });
 
+  it("waits for structured user input and resumes with the answers", async () => {
+    const { cwd } = await sourceFile();
+    const { service, store } = testRuntime(
+      [
+        assistant("Need a choice", [
+          call("choice", "request_user_input", {
+            questions: [
+              {
+                id: "scope",
+                question: "Which scope?",
+                options: [
+                  { id: "minimal", label: "Minimal" },
+                  { id: "full", label: "Full" },
+                ],
+              },
+            ],
+          }),
+        ]),
+        assistant("Using the selected scope"),
+      ],
+      {
+        userInput: {
+          async ask() {
+            return { answers: { scope: ["minimal"] } };
+          },
+        },
+      },
+    );
+    const state = await service.start("Choose a scope", cwd, new AbortController().signal);
+    expect(state.status).toBe("completed");
+    const events = await store.load(state.runId);
+    expect(events.some((event) => event.type === "user_input.required")).toBe(true);
+    expect(events.find((event) => event.type === "tool.result")?.payload).toMatchObject({
+      result: { content: JSON.stringify({ answers: { scope: ["minimal"] } }) },
+    });
+  });
+
   it("persists provider-neutral model usage", async () => {
     const { cwd } = await sourceFile();
     const { service, store } = testRuntime([assistant("Done")], {

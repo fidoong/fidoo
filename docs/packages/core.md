@@ -147,6 +147,7 @@ interface VerificationEvidence {
 | `context.compacted` | 用摘要和指定数量的最近消息替换当前消息列表 |
 | `plan.updated` | 替换为最新 revision 的完整计划 |
 | `tool.proposed` | 按 callId 保存原始调用，供恢复时识别未闭合副作用 |
+| `user_input.required` | 持久化 request_user_input 的 callId 与问题列表，答案由后续 tool.result 闭合 |
 | `tool.result` | 保存结果、追加 ToolMessage、累计 changedFiles 和 verifications |
 | `verification.requested` | 增加 attempt，并追加 source=harness 的用户消息 |
 | `run.completed` | 设置 completed 和 finalSummary |

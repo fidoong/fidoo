@@ -89,6 +89,47 @@ describe("in-process Agent API", () => {
     expect(trace.filter((event) => event.type === "tool.approval_required")).toHaveLength(2);
   });
 
+  it("round-trips structured user input through the public client", async () => {
+    const cwd = await workspace();
+    const { client } = testApi([
+      assistant("Asking", [
+        call("question", "request_user_input", {
+          questions: [
+            {
+              id: "scope",
+              question: "Choose scope",
+              options: [
+                { id: "small", label: "Small" },
+                { id: "large", label: "Large" },
+              ],
+            },
+          ],
+        }),
+      ]),
+      assistant("Answer received"),
+    ]);
+    const { runId } = await client.run.start({ task: "Choose", cwd });
+    for await (const event of client.run.subscribe({ runId, afterSeq: 0 })) {
+      if (event.type === "user_input.required") {
+        await client.input.respond({
+          runId,
+          callId: String(event.payload.callId),
+          answers: { scope: ["small"] },
+        });
+      }
+    }
+    expect((await client.run.get({ runId })).status).toBe("completed");
+    const trace = await client.run.trace({ runId });
+    expect(trace.some((event) => event.type === "user_input.required")).toBe(true);
+    expect(
+      trace.some(
+        (event) =>
+          event.type === "tool.result" &&
+          (event.payload.result as { content: string }).content.includes('"scope":["small"]'),
+      ),
+    ).toBe(true);
+  });
+
   it("deduplicates an approval response retried with the same request id", async () => {
     const cwd = await workspace();
     const { api, client } = testApi(

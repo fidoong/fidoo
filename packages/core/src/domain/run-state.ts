@@ -105,14 +105,18 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
         name: result.name,
         content: result.content,
         isError: result.status === "error",
+        ...(result.images ? { images: result.images } : {}),
       });
       for (const file of result.changedFiles ?? []) {
         state.changedFiles.add(file);
         state.lastMutationSeq = Math.max(state.lastMutationSeq, event.seq);
       }
-      if (result.verification) {
-        state.verifications.push({ ...result.verification, seq: event.seq });
-        if (successfulVerification(result.verification)) {
+      const evidence = [result.verification, ...(result.verifications ?? [])].filter(
+        (item) => item !== undefined,
+      );
+      for (const item of evidence) {
+        state.verifications.push({ ...item, seq: event.seq });
+        if (successfulVerification(item)) {
           state.lastVerificationSeq = Math.max(state.lastVerificationSeq, event.seq);
         }
       }
@@ -153,6 +157,7 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
     case "tool.approval_required":
     case "tool.decided":
     case "tool.started":
+    case "user_input.required":
     case "verification.finished":
       break;
   }

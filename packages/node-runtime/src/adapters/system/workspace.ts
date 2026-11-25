@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { AgentError } from "@fidoo/core";
@@ -49,7 +50,11 @@ export function assertNotSensitive(path: string): void {
 }
 
 export function relativePath(cwd: string, path: string): string {
-  return relative(cwd, path) || ".";
+  try {
+    return relative(realpathSync(cwd), realpathSync(path)) || ".";
+  } catch {
+    return relative(cwd, path) || ".";
+  }
 }
 
 export function revisionOf(content: string): string {

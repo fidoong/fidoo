@@ -123,7 +123,19 @@ function toAnthropicMessage(message: Message) {
         {
           type: "tool_result",
           tool_use_id: message.toolCallId,
-          content: message.content,
+          content: message.images?.length
+            ? [
+                { type: "text", text: message.content },
+                ...message.images.map((image) => ({
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: image.mimeType,
+                    data: image.data ?? "",
+                  },
+                })),
+              ]
+            : message.content,
           is_error: message.isError,
         },
       ],

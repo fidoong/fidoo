@@ -169,8 +169,27 @@ pnpm eval:offline
 | Permission policy | 用户或项目策略 JSON | 决定 allow/ask/deny，不是系统沙箱 |
 | TUI theme | `~/.fidoo/tui.json` | 由 CLI 原子写入，与 Agent 设置分离 |
 
+## 扩展工具与交互能力
+
+除基础读取、编辑和 Bash 外，当前运行时还提供以下能力：
+
+| 能力 | 工具与实现约束 |
+| --- | --- |
+| 原子多文件修改 | `apply_patch` 预校验全部 revision，写入失败回滚 |
+| 重构文件操作 | `move_file`、`delete_file` 保留路径、revision 和变更记录 |
+| 变更审查 | `workspace_status`、`workspace_diff` 使用快照，不依赖 Git |
+| 安全撤销 | `undo_file`、`undo_run` 检测外部修改并要求高危审批 |
+| 项目检查 | `run_required_checks` 按影响范围执行并返回多条结构化证据 |
+| 用户澄清 | `request_user_input` 通过 `input.respond` 和 TUI 问答组件完成 |
+| 图片理解 | `read_image` 使用 Artifact 引用和 Provider 多模态消息 |
+| 只读子代理 | `delegate_task` 使用独立 runId、上下文和只读工具集 |
+| 批量与目录读取 | `read_many_files`、`list_directory` 减少重复探索调用 |
+| 联网信息 | `web_search` 支持 Tavily/Brave/SearXNG，`web_fetch` 读取选定的公开 URL |
+
+WebSearch 的 Key 只从 `FIDOO_SEARCH_API_KEY` 等受控环境输入，项目配置只保存 provider 与 baseURL。WebFetch 默认拒绝 localhost、私网、非 HTTP(S)、非文本和超大响应。真实在线搜索与 Provider 多模态仍需按环境做冒烟验收，离线测试使用模拟 HTTP 服务。
+
 ## 当前范围与后续方向
 
-当前优先完善 Agent + TUI 的真实编码闭环。文档 Web 与只读 Observability Web 不代表 Agent Web 控制台；HTTP + SSE、Agent Web 和 Desktop 仍暂缓。
+当前优先完善 Agent + TUI。文档 Web 与只读 Observability 不代表 Agent Web 控制台；HTTP + SSE、Agent Web 和 Desktop 仍暂缓。子 Agent 当前只用于只读研究，不允许嵌套 delegation、写入或命令执行。
 
-后续核心工作包括多场景真实编程评测、错误完成率与 Token 指标、结构化 Diff、按 run 撤销、模型匹配的 tokenizer、仓库语义索引和可选操作系统沙箱。完整优先级见 `docs/core-hardening-plan.md`。
+后续核心工作包括多场景真实编程评测、错误完成率与 Token 指标、模型匹配的 tokenizer、仓库语义索引、可选 Git worktree 和操作系统沙箱。完整优先级见 `docs/core-hardening-plan.md`。

@@ -5,6 +5,7 @@ import type {
   EventStore,
   RunService,
   RuntimeObserver,
+  UserInputPort,
   WorkspacePort,
 } from "@fidoo/core";
 import { AgentError, createEvent, errorMessage, replayRun } from "@fidoo/core";
@@ -22,6 +23,7 @@ import type {
 import {
   approvalRespondParamsSchema,
   artifactReadParamsSchema,
+  inputRespondParamsSchema,
   isTerminalRunEvent,
   isTransientRunEvent,
   runIdParamsSchema,
@@ -48,12 +50,17 @@ import {
 import { RequestResultCache } from "./request-result-cache.js";
 import { RunCommandQueue } from "./run-command-queue.js";
 import { TaskHub } from "./task-hub.js";
+import { UserInputBroker } from "./user-input-broker.js";
 
 export interface AgentSettingsPort {
   getSettings(): ProviderSettings;
   updateSettings(params: SettingsUpdateParams): Promise<{
     settings: ProviderSettings;
-    createRunService(observer: RuntimeObserver, approval: ApprovalPort): RunService;
+    createRunService(
+      observer: RuntimeObserver,
+      approval: ApprovalPort,
+      userInput: UserInputPort,
+    ): RunService;
   }>;
   listModels(params: ProviderModelsParams): Promise<{ models: string[]; unavailable?: boolean }>;
 }
@@ -66,7 +73,11 @@ export interface AgentTaskPort {
 }
 
 export interface AgentApiOptions {
-  createRunService(observer: RuntimeObserver, approval: ApprovalPort): RunService;
+  createRunService(
+    observer: RuntimeObserver,
+    approval: ApprovalPort,
+    userInput: UserInputPort,
+  ): RunService;
   eventStore: EventStore;
   artifacts: ArtifactStore;
   workspace: WorkspacePort;
@@ -78,6 +89,7 @@ export class AgentApi {
   private readonly hub = new EventHub();
   private readonly taskHub = new TaskHub();
   private readonly approval = new ApprovalBroker();
+  private readonly userInput = new UserInputBroker();
   private readonly commands = new RunCommandQueue();
   private readonly requestResults = new RequestResultCache();
   private runService: RunService;
@@ -98,7 +110,7 @@ export class AgentApi {
         this.hub.publishTransient(toToolOutputDelta(runId, this.hub.sequence(runId), callId, text));
       },
     };
-    this.runService = options.createRunService(this.observer, this.approval);
+    this.runService = options.createRunService(this.observer, this.approval, this.userInput);
     this.options.tasks?.onEvent((event) => this.taskHub.publish(event));
   }
 
@@ -130,6 +142,14 @@ export class AgentApi {
         return this.listModels(params);
       case "approval.respond":
         return this.requestResults.run(method, requestId, params, () => this.respond(params));
+      case "input.respond":
+        return this.requestResults.run(method, requestId, params, () => {
+          const input = inputRespondParamsSchema.parse(params);
+          return this.commands.run(input.runId, () => {
+            this.userInput.respond(input);
+            return { ok: true as const };
+          });
+        });
       case "task.list":
         return this.listTasks(params);
       case "task.output":
@@ -420,7 +440,7 @@ export class AgentApi {
       throw new AgentError("Finish or cancel active runs before changing models", "configuration");
     }
     const result = await this.options.settings.updateSettings(params as SettingsUpdateParams);
-    this.runService = result.createRunService(this.observer, this.approval);
+    this.runService = result.createRunService(this.observer, this.approval, this.userInput);
     return result.settings;
   }
 

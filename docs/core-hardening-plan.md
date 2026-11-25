@@ -63,13 +63,17 @@
 
 ### E. 改动安全与结构化 Diff
 
-- mutation 前快照，支持按文件和按 run 撤销。
+状态：mutation 快照、结构化变更、统一 Diff、按文件/run 撤销、原子多文件补丁、移动和删除已完成；可选 Git worktree 隔离仍未实现，当前不强制目标目录为 Git 仓库。
+
+- mutation 前快照，支持按文件和按 run 撤销；外部后续修改会阻止覆盖。
 - 统一新增、修改、删除的结构化变更模型和标准 unified diff。
+- `apply_patch` 支持跨文件 revision 预校验、统一写入和写入失败回滚。
+- `workspace_status` / `workspace_diff` 读取当前 run 的变更，不依赖 Git。
 - 可选 Git worktree 隔离，不强制目标目录为 Git 仓库。
 
 ### F. 可信验证与真实评测
 
-状态：结构化验证结果、失败分类、项目 required checks、路径作用域和完成证据已完成；多场景真实评测集与指标汇总仍待后续。
+状态：结构化验证结果、失败分类、项目 required checks、路径作用域、完成证据和 `run_required_checks` 工具已完成；多场景真实评测集与指标汇总仍待后续。
 
 - 项目级 required checks、相关测试选择和结构化测试结果。
 - 区分测试、类型、Lint、构建、环境和超时失败。

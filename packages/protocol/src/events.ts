@@ -20,6 +20,7 @@ export const PUBLIC_RUN_EVENT_TYPES = [
   "tool.approval_required",
   "tool.decided",
   "tool.started",
+  "user_input.required",
   "tool.output.delta",
   "tool.result",
   "verification.requested",
