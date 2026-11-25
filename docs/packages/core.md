@@ -44,7 +44,7 @@ export interface RunState {
 
 ## AgentLoop 执行实现
 
-`RunService` 创建和恢复任务，`AgentLoop.run` 逐轮执行。每一轮先处理 Steering，再构建请求并流式调用模型；有工具调用时进入调度器，无工具调用时进入完成门禁。
+`RunService` 创建和恢复任务，`AgentLoop.run` 逐轮执行。每一轮先处理 Steering，再构建请求并流式调用模型；有工具调用时进入调度器，无工具调用时进入完成门禁。RunState 持久化 permissionMode、dontAsk 和 bypassPermissions，PolicyEngine 按当前事件状态而不是全局可变开关决策。Auto 模式通过 AutoReviewPort 调用独立模型，审查事件和 usage 一并持久化，失败只回退 ask/deny。Plan 模式完成时进入 awaiting_plan，`RunService.decidePlan` 校验 revision 后记录批准/拒绝，批准后才切换 manual、acceptEdits 或 auto 并恢复执行。
 
 ```text
 flushSteering

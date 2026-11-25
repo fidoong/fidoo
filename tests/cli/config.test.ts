@@ -89,6 +89,45 @@ describe("provider configuration", () => {
     );
   });
 
+  it("forwards the selected sandbox mode to the sidecar", () => {
+    vi.stubEnv("OPENAI_API_KEY", "openai-test-key");
+    const config = resolveRuntimeConfig({
+      cwd: ".",
+      provider: "openai",
+      model: "test-model",
+      sandbox: "required",
+      output: "text",
+      maxIterations: "40",
+    });
+    expect(config.sandbox).toBe("required");
+    expect(serverArguments(config)).toEqual(expect.arrayContaining(["--sandbox", "required"]));
+  });
+
+  it("forwards the agent behavior mode and rejects read-only auto", () => {
+    vi.stubEnv("OPENAI_API_KEY", "openai-test-key");
+    const config = resolveRuntimeConfig({
+      cwd: ".",
+      provider: "openai",
+      model: "test-model",
+      mode: "acceptEdits",
+      output: "text",
+      maxIterations: "40",
+    });
+    expect(config.mode).toBe("acceptEdits");
+    expect(serverArguments(config)).toEqual(expect.arrayContaining(["--mode", "acceptEdits"]));
+    expect(() =>
+      resolveRuntimeConfig({
+        cwd: ".",
+        provider: "openai",
+        model: "test-model",
+        mode: "auto",
+        readOnly: true,
+        output: "text",
+        maxIterations: "40",
+      }),
+    ).toThrow("--read-only cannot be combined");
+  });
+
   it("rejects DeepSeek thinking options for the generic provider", () => {
     vi.stubEnv("OPENAI_API_KEY", "openai-test-key");
     vi.stubEnv("FIDOO_MODEL", "test-model");

@@ -83,7 +83,7 @@ describe("background tasks", () => {
         assistant("Checking", [call("list", "task_list", {})]),
         assistant("Background server is running"),
       ],
-      { permission: "ask" },
+      { permission: "manual" },
     );
     managers.push(tasks);
     const notifications = client.tasks.subscribe();

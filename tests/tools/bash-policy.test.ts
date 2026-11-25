@@ -152,15 +152,21 @@ describe("command execution and policy", () => {
     }
   });
 
-  it("fails closed for high-risk commands in auto mode", () => {
+  it("requires model review for non-low-risk commands in auto mode", () => {
     const registry = new ToolRegistry(createCodingTools());
     const bash = registry.get("bash");
     if (!bash) throw new Error("Missing bash");
     const auto = new PolicyEngine("auto");
-    expect(auto.evaluate(bash, { command: "pnpm", args: ["test"] }).action).toBe("allow");
-    expect(auto.evaluate(bash, { command: "git", args: ["push"] }).action).toBe("deny");
-    expect(auto.evaluate(bash, { command: "node", args: ["-e", "process.exit(0)"] }).action).toBe(
-      "deny",
+    expect(auto.evaluate(bash, { command: "pnpm", args: ["test"] })).toMatchObject({
+      action: "ask",
+      requiresReview: true,
+    });
+    expect(auto.evaluate(bash, { command: "git", args: ["push"] })).toMatchObject({
+      action: "ask",
+      requiresReview: true,
+    });
+    expect(auto.evaluate(bash, { command: "node", args: ["-e", "process.exit(0)"] })).toMatchObject(
+      { action: "ask", requiresReview: true },
     );
     expect(new PolicyEngine("read-only").evaluate(bash, { command: "node", args: [] }).action).toBe(
       "deny",

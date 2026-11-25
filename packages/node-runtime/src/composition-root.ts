@@ -12,9 +12,11 @@ import type {
   WorkspacePort,
 } from "@fidoo/core";
 import {
+  AgentError,
   RunService as CoreRunService,
   delegateTaskTool,
   loadProjectInstructions,
+  ModelAutoReviewer,
   PolicyEngine,
   requestUserInputTool,
   ToolRegistry,
@@ -24,6 +26,12 @@ import {
 import { modelContextBudget, providerDefinition } from "@fidoo/protocol";
 import { RejectApproval } from "./adapters/approval/reject.js";
 import { WorkspaceChangeManager } from "./adapters/changes/workspace-change-manager.js";
+import {
+  CommandExecutor,
+  detectSandboxInstallation,
+} from "./adapters/execution/command-executor.js";
+import { loadExecutionConfig } from "./adapters/execution/config.js";
+import type { ExecutionConfig } from "./adapters/execution/types.js";
 import { AnthropicModel } from "./adapters/models/anthropic.js";
 import { DeepSeekModel } from "./adapters/models/deepseek.js";
 import { GeminiModel } from "./adapters/models/gemini.js";
@@ -54,6 +62,7 @@ export interface NodeRuntime {
   tasks: BackgroundTaskManager;
   permission: ResolvedPermissionPolicy;
   permissionMode: PermissionMode;
+  execution: ExecutionConfig;
 }
 
 export async function createNodeRuntime(
@@ -65,16 +74,29 @@ export async function createNodeRuntime(
   const instructions = await loadProjectInstructions(config.cwd);
   const requiredChecks = await loadRequiredChecks(config.cwd);
   const webSearch = await loadWebSearchConfig(config.cwd);
+  const execution = await loadExecutionConfig(config.dataHome, config.sandbox);
+  const executor = new CommandExecutor(execution, config.dataHome);
   const permission = await loadPermissionPolicy(config);
   const permissionMode: PermissionMode = config.readOnly
     ? "read-only"
-    : config.autoApprove
-      ? "auto"
-      : (permission.mode ?? "ask");
+    : (config.mode ?? permission.mode ?? "manual");
+  if (config.bypassPermissions && (config.readOnly || permissionMode === "plan")) {
+    throw new AgentError(
+      "Bypass permissions cannot be combined with read-only or plan mode",
+      "configuration",
+    );
+  }
+  if (config.bypassPermissions && execution.mode !== "required") {
+    throw new AgentError("Bypass permissions requires execution.mode=required", "configuration");
+  }
+  if (config.bypassPermissions && !(await detectSandboxInstallation())) {
+    throw new AgentError("Bypass permissions requires an available OS sandbox", "configuration");
+  }
+  const autoReview = new ModelAutoReviewer(createModel(config), config.model);
   const eventStore = new FileEventStore(config.dataHome);
   const artifacts = new FileArtifactStore(config.dataHome);
   const workspace = new LocalWorkspace();
-  const tasks = taskManager ?? new BackgroundTaskManager(config.dataHome);
+  const tasks = taskManager ?? new BackgroundTaskManager(config.dataHome, executor);
   const changes = new WorkspaceChangeManager(config.dataHome);
   const contextBudget = modelContextBudget(config.provider, config.model, config.maxContextTokens);
   const cacheKey =
@@ -88,10 +110,13 @@ export async function createNodeRuntime(
     workspace,
     artifacts,
     tools: new ToolRegistry(
-      createCodingTools(tasks, requiredChecks, changes).filter((tool) => tool.effect === "read"),
+      createCodingTools(tasks, requiredChecks, changes, executor).filter(
+        (tool) => tool.effect === "read",
+      ),
     ),
     approval: new RejectApproval(),
     policy: new PolicyEngine("read-only"),
+    permissionMode: "read-only",
     systemPrompt: `${withProjectInstructions(instructions)}\n\nYou are a read-only research subagent. Inspect the workspace and return concrete findings to the parent. Do not attempt writes, commands, user questions or nested delegation.`,
     ...(cacheKey ? { cacheKey } : {}),
     maxIterations: Math.min(config.maxIterations, 12),
@@ -112,13 +137,17 @@ export async function createNodeRuntime(
         updatePlanTool,
         requestUserInputTool,
         delegateTaskTool,
-        ...createCodingTools(tasks, requiredChecks, changes),
+        ...createCodingTools(tasks, requiredChecks, changes, executor),
         ...createWebTools(webSearch),
       ]),
       approval: serviceApproval ?? new RejectApproval(),
       ...(userInput ? { userInput } : {}),
       subagents,
       policy: new PolicyEngine(permissionMode, permission.rules),
+      permissionMode,
+      dontAsk: config.dontAsk ?? false,
+      bypassPermissions: config.bypassPermissions ?? false,
+      autoReview,
       systemPrompt: withProjectInstructions(instructions, requiredChecks),
       ...(cacheKey ? { cacheKey } : {}),
       requiredChecks,
@@ -135,6 +164,7 @@ export async function createNodeRuntime(
     tasks,
     permission,
     permissionMode,
+    execution,
   };
 }
 

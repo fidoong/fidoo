@@ -125,7 +125,7 @@ session.close        关闭客户端订阅，不取消任务
   "params": {
     "workspaceId": "workspace-1",
     "task": "修复失败测试",
-    "permissionMode": "ask"
+    "permissionMode": "manual"
   }
 }
 ```

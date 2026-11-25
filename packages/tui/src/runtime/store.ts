@@ -12,6 +12,11 @@ export function initialTuiState(): TuiState {
   return {
     phase: "idle",
     runId: undefined,
+    permissionMode: "manual",
+    dontAsk: false,
+    bypassPermissions: false,
+    reviewingTool: undefined,
+    pendingPlan: undefined,
     messages: [],
     streamingText: "",
     streamingBlocksStarted: false,
@@ -53,7 +58,9 @@ export function initialTuiState(): TuiState {
 }
 
 export function isActivePhase(phase: TuiState["phase"]): boolean {
-  return ["starting", "running", "awaiting_approval", "awaiting_input"].includes(phase);
+  return ["starting", "running", "awaiting_plan", "awaiting_approval", "awaiting_input"].includes(
+    phase,
+  );
 }
 
 export function markStarting(state: TuiState): TuiState {
@@ -71,6 +78,7 @@ export function markStarting(state: TuiState): TuiState {
     reasoningMessageId: undefined,
     verificationStatus: undefined,
     pendingInput: undefined,
+    pendingPlan: undefined,
     notice: undefined,
     error: undefined,
   };
@@ -181,7 +189,16 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
   const state = { ...current, lastSeq: event.seq, runId: event.runId };
   switch (event.type) {
     case "run.started":
-      return { ...state, phase: "running", error: undefined };
+      return {
+        ...state,
+        phase: "running",
+        permissionMode:
+          (event.payload.permissionMode as typeof state.permissionMode | undefined) ??
+          state.permissionMode,
+        dontAsk: event.payload.dontAsk === true,
+        bypassPermissions: event.payload.bypassPermissions === true,
+        error: undefined,
+      };
     case "run.resumed":
       return {
         ...state,
@@ -194,6 +211,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         reasoningEndedAt: undefined,
         verificationStatus: undefined,
         pendingInput: undefined,
+        pendingPlan: undefined,
         error: undefined,
       };
     case "context.compacted":
@@ -302,6 +320,25 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         },
       };
     }
+    case "mode.changed":
+      return {
+        ...state,
+        permissionMode: event.payload.mode as typeof state.permissionMode,
+        notice: `Mode changed · ${String(event.payload.mode)}`,
+      };
+    case "plan.awaiting_approval":
+      return {
+        ...state,
+        phase: "awaiting_plan",
+        pendingPlan: {
+          planId: String(event.payload.planId),
+          requestedMode: event.payload.requestedMode as typeof state.permissionMode,
+        },
+        notice: "Plan ready for approval · no code has been changed by plan approval",
+      };
+    case "plan.approved":
+    case "plan.rejected":
+      return { ...state, pendingPlan: undefined };
     case "plan.updated": {
       const plan = event.payload.plan as ViewTaskPlan | undefined;
       if (!plan || typeof plan.title !== "string" || !Array.isArray(plan.steps)) {
@@ -309,6 +346,24 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
       }
       return { ...state, taskPlan: structuredClone(plan) };
     }
+    case "permission.review.started":
+      return {
+        ...state,
+        reviewingTool: String(event.payload.tool),
+        notice: `Reviewing · ${String(event.payload.tool)}`,
+      };
+    case "permission.review.completed":
+      return {
+        ...state,
+        reviewingTool: undefined,
+        notice: `Review · ${String(event.payload.action)} · ${String(event.payload.reason)}`,
+      };
+    case "permission.review.failed":
+      return {
+        ...state,
+        reviewingTool: undefined,
+        notice: `Review failed · ${String(event.payload.error)}`,
+      };
     case "tool.proposed": {
       const call = toolCall(event.payload.call);
       return {

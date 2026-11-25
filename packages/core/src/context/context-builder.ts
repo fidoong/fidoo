@@ -120,6 +120,12 @@ function harnessMessage(run: RunState): UserMessage {
     content: [
       "Current harness state:",
       `Workspace: ${run.cwd}`,
+      `Behavior mode: ${run.permissionMode}`,
+      ...(run.permissionMode === "plan"
+        ? [
+            "Plan mode is active: inspect and plan only. Do not modify files or run non-read-only commands. Finish with update_plan so the user can approve execution.",
+          ]
+        : []),
       `Changed files: ${[...run.changedFiles].join(", ") || "none"}`,
       `Verification required: ${needsVerification(run) ? "yes" : "no"}`,
       `Current plan: ${run.plan ? short(JSON.stringify(run.plan), 6000) : "not created"}`,

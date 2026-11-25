@@ -7,6 +7,9 @@ import { AgentError } from "@fidoo/core";
 import type { BackgroundTask, BackgroundTaskEvent, TaskOutputPage } from "@fidoo/protocol";
 import { backgroundTaskSchema } from "@fidoo/protocol";
 import { execa } from "execa";
+import { CommandExecutor } from "../execution/command-executor.js";
+import { terminateProcessTree } from "../execution/process.js";
+import type { PreparedCommand } from "../execution/types.js";
 import { withFileLock } from "../storage/file-lock.js";
 
 interface StartTaskInput {
@@ -14,6 +17,8 @@ interface StartTaskInput {
   command: string;
   args: string[];
   cwd: string;
+  workspace?: string;
+  prepared?: PreparedCommand;
 }
 
 export class BackgroundTaskManager {
@@ -24,7 +29,10 @@ export class BackgroundTaskManager {
   private readonly active = new Set<string>();
   private ready: Promise<void> | undefined;
 
-  constructor(private readonly root?: string) {}
+  constructor(
+    private readonly root?: string,
+    private readonly executor = new CommandExecutor(),
+  ) {}
 
   onEvent(listener: (event: BackgroundTaskEvent) => void): () => void {
     this.listeners.add(listener);
@@ -39,8 +47,11 @@ export class BackgroundTaskManager {
     const stream = directory
       ? createWriteStream(join(directory, "output.log"), { flags: "a", mode: 0o600 })
       : undefined;
-    const subprocess = execa(input.command, input.args, {
+    const prepared = input.prepared ?? (await this.executor.prepare(input));
+    const subprocess = execa(prepared.command, prepared.args, {
       cwd: input.cwd,
+      env: prepared.env,
+      extendEnv: false,
       shell: false,
       reject: false,
       detached: process.platform !== "win32",
@@ -105,8 +116,8 @@ export class BackgroundTaskManager {
     const task = await this.get(taskId);
     if (task.status !== "running") return task;
     this.stopping.add(taskId);
-    terminateGroup(task.pid, "SIGTERM");
-    const timer = setTimeout(() => terminateGroup(task.pid, "SIGKILL"), 5000);
+    terminateProcessTree(task.pid, "SIGTERM");
+    const timer = setTimeout(() => terminateProcessTree(task.pid, "SIGKILL"), 5000);
     timer.unref();
     const stopped: BackgroundTask = {
       ...task,
@@ -275,12 +286,6 @@ export class BackgroundTaskManager {
   private emit(event: BackgroundTaskEvent): void {
     for (const listener of this.listeners) listener(event);
   }
-}
-
-function terminateGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(process.platform === "win32" ? pid : -pid, signal);
-  } catch {}
 }
 
 function processAlive(pid: number): boolean {

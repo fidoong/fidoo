@@ -19,6 +19,7 @@ export const commandDefinitions: CommandDefinition[] = [
     duringRun: true,
   },
   { name: "/plan", description: "Expand or collapse the task plan", duringRun: true },
+  { name: "/mode", description: "Choose agent behavior mode", duringRun: true },
   { name: "/output", description: "Open the latest tool output", duringRun: true },
   {
     name: "/status",

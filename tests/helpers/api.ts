@@ -1,6 +1,6 @@
 import { AgentApi, InProcessTransport } from "@fidoo/api";
 import { createAgentClient } from "@fidoo/client";
-import type { AssistantMessage, PermissionMode } from "@fidoo/core";
+import type { AssistantMessage, AutoReviewPort, PermissionMode } from "@fidoo/core";
 import {
   BASE_SYSTEM_PROMPT,
   PolicyEngine,
@@ -21,7 +21,12 @@ import { approveAll } from "./runtime.js";
 
 export function testApi(
   responses: AssistantMessage[],
-  options: { permission?: PermissionMode } = {},
+  options: {
+    permission?: PermissionMode;
+    autoReview?: AutoReviewPort;
+    dontAsk?: boolean;
+    bypassPermissions?: boolean;
+  } = {},
 ) {
   const store = new MemoryEventStore();
   const artifacts = new MemoryArtifactStore();
@@ -44,6 +49,10 @@ export function testApi(
         approval: approval ?? approveAll,
         userInput,
         policy: new PolicyEngine(options.permission ?? "auto"),
+        permissionMode: options.permission ?? "auto",
+        dontAsk: options.dontAsk ?? false,
+        bypassPermissions: options.bypassPermissions ?? false,
+        ...(options.autoReview ? { autoReview: options.autoReview } : {}),
         systemPrompt: BASE_SYSTEM_PROMPT,
         maxIterations: 10,
         observer,

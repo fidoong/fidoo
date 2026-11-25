@@ -15,8 +15,14 @@ describe("configurable permission rules", () => {
       },
     ]);
     expect(evaluateBash(policy, "git", ["status"])).toMatchObject({ action: "allow" });
-    expect(evaluateBash(policy, "git", ["push"])).toMatchObject({ action: "deny" });
-    expect(evaluateBash(policy, "node", ["script.js"])).toMatchObject({ action: "deny" });
+    expect(evaluateBash(policy, "git", ["push"])).toMatchObject({
+      action: "ask",
+      requiresReview: true,
+    });
+    expect(evaluateBash(policy, "node", ["script.js"])).toMatchObject({
+      action: "ask",
+      requiresReview: true,
+    });
   });
 
   it("uses the last matching rule across command selectors", () => {
@@ -33,7 +39,7 @@ describe("configurable permission rules", () => {
   it("matches workspace paths including root files with ** patterns", () => {
     const edit = registry.get("edit_file");
     if (!edit) throw new Error("Missing edit_file");
-    const policy = new PolicyEngine("ask", [
+    const policy = new PolicyEngine("manual", [
       { action: "allow", tools: ["edit_file"], paths: ["**/*.test.ts"] },
       { action: "deny", tools: ["edit_file"], paths: ["src/generated/**"] },
     ]);
@@ -63,7 +69,10 @@ describe("configurable permission rules", () => {
       },
     ]);
     expect(evaluateBash(policy, "pnpm", ["test"])).toMatchObject({ action: "ask" });
-    expect(evaluateBash(policy, "npm", ["test"])).toMatchObject({ action: "allow" });
+    expect(evaluateBash(policy, "npm", ["test"])).toMatchObject({
+      action: "ask",
+      requiresReview: true,
+    });
   });
 });
 

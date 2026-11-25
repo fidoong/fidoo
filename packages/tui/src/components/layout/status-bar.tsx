@@ -1,3 +1,4 @@
+import type { PermissionMode } from "@fidoo/protocol";
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { isActivePhase } from "../../runtime/store.js";
@@ -33,10 +34,11 @@ export function StatusBar({
       <Text>
         <Spinner active={isActivePhase(state.phase)} color={statusColor(state.phase)} />{" "}
         <Text bold>{state.phase}</Text>
+        <Text color={modeColor(state.permissionMode)}> · {modeLabel(state.permissionMode)}</Text>
         {activity ? <Text color={theme.accent}> · {activity}</Text> : null}
         <Text dimColor>
           {" "}
-          · {state.runId ? state.runId.slice(0, 8) : "new session"} · {files}{" "}
+          · {state.runId ? state.runId.slice(0, 8) : "new"} · {files}{" "}
           {files === 1 ? "file" : "files"}
           {runningTasks > 0 ? ` · ${runningTasks} ${runningTasks === 1 ? "task" : "tasks"}` : ""}
         </Text>
@@ -53,11 +55,25 @@ export function StatusBar({
   );
 }
 
+function modeLabel(mode: PermissionMode): string {
+  return mode === "acceptEdits" ? "EDIT" : mode.toUpperCase().replace("-", "_");
+}
+
+function modeColor(mode: PermissionMode): string {
+  if (mode === "plan" || mode === "read-only") return theme.warning;
+  if (mode === "auto") return theme.success;
+  return theme.brandSecondary;
+}
+
 function activityLabel(state: TuiState, now: number): string {
   let label = "";
-  if (state.modelActivity.active) {
+  if (state.reviewingTool) {
+    label = `reviewing · ${state.reviewingTool}`;
+  } else if (state.modelActivity.active) {
     const elapsed = Math.max(0, Math.round((now - (state.modelActivity.startedAt ?? now)) / 1000));
     label = `model turn ${state.modelActivity.iteration} · ${elapsed}s`;
+  } else if (state.phase === "awaiting_plan") {
+    label = "plan approval required";
   } else if (state.phase === "awaiting_approval") {
     label = "approval required";
   } else if (state.verificationStatus === "running") {
@@ -69,7 +85,7 @@ function activityLabel(state: TuiState, now: number): string {
     if (tool) label = `tool · ${tool.name}`;
   }
   if (state.steeringPending > 0) {
-    label += `${label ? " · " : ""}guidance queued (${state.steeringPending})`;
+    label += `${label ? " · " : ""}guidance (${state.steeringPending})`;
   }
   return label;
 }

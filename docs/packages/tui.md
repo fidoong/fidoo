@@ -61,7 +61,9 @@ keyboard intent → AgentClient command
 | Ctrl+K | 打开命令面板 |
 | Ctrl+R | 展开或折叠推理预览 |
 
-Slash 命令覆盖 `/new`、`/resume`、`/sessions`、`/trace`、`/theme`、`/reasoning`、`/artifact`、`/settings` 和 `/help`。审批通过公共 `approval.respond` 返回服务端，不在 TUI 内修改权限。
+Slash 命令覆盖 `/new`、`/resume`、`/sessions`、`/trace`、`/theme`、`/reasoning`、`/artifact`、`/settings`、`/mode` 和 `/help`。审批通过公共 `approval.respond` 返回服务端，不在 TUI 内修改权限。
+
+状态栏显示当前 manual、acceptEdits/EDIT、plan 或 auto。Composer 聚焦时 Shift+Tab 循环模式；`/mode` 提供带说明的选择器。Plan 到达 awaiting_plan 后自动打开审批界面，可选择 Approve & Edit、Approve & Auto、Approve & Review manually 或 Revise；所有结果均通过公共 API 和持久事件生效。
 
 ## 主题与进程边界
 

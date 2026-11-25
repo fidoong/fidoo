@@ -1,6 +1,13 @@
 import type { ArtifactReference } from "../ports/artifacts.js";
 import type { VerificationEvidence } from "./verification.js";
 
+export interface ExecutionObservation {
+  backend: "direct" | "seatbelt" | "bubblewrap";
+  network: "deny" | "allow" | "unchanged";
+  environment: "isolated";
+  warning?: string;
+}
+
 export interface ToolCall {
   id: string;
   name: string;
@@ -54,4 +61,5 @@ export interface ToolObservation {
   verification?: VerificationEvidence;
   verifications?: VerificationEvidence[];
   images?: ImageReference[];
+  execution?: ExecutionObservation;
 }

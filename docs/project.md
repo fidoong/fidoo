@@ -63,10 +63,16 @@ apps/agent-server ──────► api ────► core
 
 - 项目配置只能收紧权限，不能通过项目文件开启 `auto` 或添加 `allow`。
 - 文件工具限制工作区路径、拒绝敏感文件，并使用 revision 乐观锁与原子写入。
-- Bash 不经过 shell，直接执行 `command + args`；它不是操作系统沙箱。
+- Bash 不经过 shell，直接执行 `command + args`；默认使用最小环境变量，并在可用时通过 macOS Seatbelt 或 Linux/WSL2 Bubblewrap 限制文件与网络。原生 Windows 仅提供 direct，`required` 会提示改用 WSL2；`auto` 降级会显式记录。
 - 获批命令仍拥有当前用户的操作系统权限，不可信代码需要容器或系统级隔离。
 
 详细规则见 `docs/permissions.md`。
+
+## Agent 行为模式与计划审批
+
+支持 plan、manual、acceptEdits 和 auto；v2 不保留 ask、旧 auto 或 --yes 别名。read-only 和 dontAsk 是独立硬约束，不能被模式切换覆盖。Auto 使用真实模型 AutoReviewPort，失败回退人工审批。Plan 模式只允许读取与规划，完成后进入 awaiting_plan；`plan.respond` 校验 revision，批准并选择执行模式后恢复原 run，拒绝则携带反馈继续规划。
+
+TUI 状态栏展示当前模式，Shift+Tab 循环，`/mode` 打开选择器。模式变化和计划审批均写入 canonical events，断线恢复后权限状态一致。详见 `docs/permissions.md`。
 
 ## 可信验证配置
 

@@ -121,7 +121,7 @@ describe("AgentLoop", () => {
         ]),
         assistant("I could not edit because approval was rejected"),
       ],
-      { permission: "ask", approval: rejectAll },
+      { permission: "manual", approval: rejectAll },
     );
     const state = await service.start("Fix value", cwd, new AbortController().signal);
     expect(state.status).toBe("completed");

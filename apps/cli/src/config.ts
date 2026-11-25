@@ -1,9 +1,14 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AgentError } from "@fidoo/core";
-import type { NodeRuntimeConfig, ProviderKind, ThinkingMode } from "@fidoo/node-runtime";
+import type {
+  NodeRuntimeConfig,
+  ProviderKind,
+  SandboxMode,
+  ThinkingMode,
+} from "@fidoo/node-runtime";
 import { parseProviderKind, resolveProviderConnection } from "@fidoo/node-runtime";
-import { providerDefinition } from "@fidoo/protocol";
+import { type PermissionMode, providerDefinition } from "@fidoo/protocol";
 
 export type OutputFormat = "text" | "json" | "jsonl";
 
@@ -13,9 +18,12 @@ export interface GlobalOptions {
   model?: string;
   baseUrl?: string;
   thinking?: ThinkingMode;
-  yes?: boolean;
   readOnly?: boolean;
+  dontAsk?: boolean;
+  dangerouslyBypassPermissions?: boolean;
   policy?: string;
+  sandbox?: SandboxMode;
+  mode?: Exclude<PermissionMode, "read-only">;
   output: OutputFormat;
   maxIterations: string;
 }
@@ -53,8 +61,8 @@ export function resolveRuntimeConfig(
   if (provider !== "deepseek" && (options.thinking ?? process.env.FIDOO_THINKING)) {
     throw new AgentError("--thinking is only supported with --provider deepseek", "configuration");
   }
-  if (options.yes && options.readOnly) {
-    throw new AgentError("--yes and --read-only cannot be used together", "configuration");
+  if (options.readOnly && options.mode === "auto") {
+    throw new AgentError("--read-only cannot be combined with --mode auto", "configuration");
   }
   const maxIterations = Number.parseInt(options.maxIterations, 10);
   if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > 200) {
@@ -65,9 +73,12 @@ export function resolveRuntimeConfig(
     ...connection,
     thinking,
     dataHome: dataHome(),
-    autoApprove: options.yes ?? false,
     readOnly: options.readOnly ?? false,
+    dontAsk: options.dontAsk ?? false,
+    bypassPermissions: options.dangerouslyBypassPermissions ?? false,
     ...(options.policy ? { policyFile: options.policy } : {}),
+    ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+    ...(options.mode ? { mode: options.mode } : {}),
     maxIterations,
     output: options.output,
   };
@@ -85,9 +96,12 @@ export function serverArguments(config: RuntimeConfig): string[] {
     String(config.maxIterations),
     ...(config.baseURL ? ["--base-url", config.baseURL] : []),
     ...(config.policyFile ? ["--policy", config.policyFile] : []),
+    ...(config.sandbox ? ["--sandbox", config.sandbox] : []),
+    ...(config.mode ? ["--mode", config.mode] : []),
     ...(config.provider === "deepseek" ? ["--thinking", config.thinking] : []),
-    ...(config.autoApprove ? ["--yes"] : []),
     ...(config.readOnly ? ["--read-only"] : []),
+    ...(config.dontAsk ? ["--dont-ask"] : []),
+    ...(config.bypassPermissions ? ["--dangerously-bypass-permissions"] : []),
   ];
 }
 

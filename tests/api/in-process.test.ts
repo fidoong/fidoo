@@ -68,7 +68,7 @@ describe("in-process Agent API", () => {
         ]),
         assistant("Verified"),
       ],
-      { permission: "ask" },
+      { permission: "manual" },
     );
     const { runId } = await client.run.start({ task: "Fix value", cwd });
     let approvalCount = 0;
@@ -139,7 +139,7 @@ describe("in-process Agent API", () => {
         ]),
         assistant("Checked"),
       ],
-      { permission: "ask" },
+      { permission: "manual" },
     );
     const { runId } = await client.run.start({ task: "Check Node", cwd });
     for await (const event of client.run.subscribe({ runId, afterSeq: 0 })) {

@@ -9,7 +9,8 @@ export class RunServiceSubagent implements SubagentPort {
     const runId = randomUUID();
     const service = new RunService(this.options);
     const state = await service.start(request.task, request.cwd, request.signal, runId);
-    const status = state.status === "running" ? "failed" : state.status;
+    const status =
+      state.status === "running" || state.status === "awaiting_plan" ? "failed" : state.status;
     return {
       runId,
       status,

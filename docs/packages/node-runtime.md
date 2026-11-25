@@ -68,6 +68,10 @@ const subprocess = execa(input.command, input.args, {
 
 macOS/Linux 使用独立进程组。取消或超时先向进程组发送 SIGTERM，5 秒后升级 SIGKILL，确保孙进程不会遗留在本地。stdout/stderr 通过临时 `tool.output.delta` 实时推送，最终输出仍进入工具结果与 Artifact。
 
+前台、后台任务和 required checks 在执行前统一调用 `CommandExecutor.prepare`。它生成最小环境变量、run 专属 HOME/TMPDIR 和平台命令：macOS Seatbelt 使用 `sandbox-exec -f`，Linux/WSL2 Bubblewrap 使用只读系统挂载与网络命名空间。执行结果通过 `ExecutionObservation` 记录 direct/seatbelt/bubblewrap、网络策略和降级 warning；`required` 不可用会失败，`auto` 不允许静默降级。配置读取只信任 `<FIDOO_HOME>/execution.json`，防止仓库自行关闭隔离。
+
+Windows 环境读取按大小写不敏感处理 PATH/SystemRoot 等变量，同时隔离 USERPROFILE、TMP 和 TEMP。直接命令的强制清理由 `taskkill /pid <pid> /t /f` 完成。与 Claude Code 的平台策略一致，原生 Windows 不提供文件/网络沙箱；需要隔离时，把整个 Fidoo CLI/server 放进 WSL2，此时进程平台为 Linux，直接复用 Bubblewrap 后端，不经过 `wsl.exe` 跨宿主转发。
+
 识别为验证的命令会附带 `VerificationEvidence`，包括检查类型、状态、退出码、耗时和失败分类。匹配项目 required check 时还写入 `checkId`，并使用项目配置的超时时间。
 
 ## 持久后台任务

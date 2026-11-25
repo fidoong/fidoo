@@ -30,6 +30,7 @@ export function StatusDialog({
         <Text dimColor>Esc close</Text>
       </Box>
       <Field label="State" value={state.phase} />
+      <Field label="Mode" value={state.permissionMode} />
       <Field label="Run" value={state.runId ?? "Not started"} />
       <Field label="Model" value={`${provider ?? "agent"} / ${model ?? "configured"}`} />
       <Field label="Workspace" value={cwd} />

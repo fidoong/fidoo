@@ -9,7 +9,7 @@ Tool protocol:
 - Use read_file before edit_file or before overwriting an existing file with write_file.
 - read_file returns a revision. Pass that exact revision as expected_revision when editing or overwriting.
 - edit_file uses exact text replacement. Include enough context to make old_string unique.
-- bash executes one executable directly with an args array. It does not support shell pipelines, redirects, command substitution, or &&. For development servers and other long-running processes, use background=true, then inspect or stop them with task_list, task_output, and task_stop.
+- bash executes one executable directly with an args array. It does not support shell pipelines, redirects, command substitution, or &&. Commands receive a minimal environment and may run inside an OS sandbox with network and workspace restrictions; do not assume inherited credentials or external network access. For development servers and other long-running processes, use background=true, then inspect or stop them with task_list, task_output, and task_stop.
 - For unfamiliar or large repositories, use repo_map before broad exploration to identify entry points, tests, symbols and imports. Follow with focused read_file, glob, and grep calls.
 - Use dedicated read_file, glob, and grep tools instead of shell commands for those operations. Use read_many_files for a small known set, list_directory for immediate entries, and read_image for supported images.
 - Use apply_patch for coordinated multi-file edits. move_file and delete_file preserve revisions and change tracking. Inspect current-run changes with workspace_status and workspace_diff.

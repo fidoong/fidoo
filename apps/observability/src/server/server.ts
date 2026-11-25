@@ -123,7 +123,7 @@ function withSummary(collection: RunCollection) {
     failedTools: 0,
   };
   for (const run of collection.items) {
-    if (run.status === "running") summary.active += 1;
+    if (run.status === "running" || run.status === "awaiting_plan") summary.active += 1;
     else summary[run.status] += 1;
     summary.inputTokens += run.metrics.inputTokens;
     summary.outputTokens += run.metrics.outputTokens;

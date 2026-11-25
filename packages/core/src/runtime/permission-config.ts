@@ -27,7 +27,7 @@ export const permissionRuleSchema = z
 export const permissionConfigSchema = z
   .object({
     version: z.literal(1).default(1),
-    mode: z.enum(["ask", "read-only", "auto"]).optional(),
+    mode: z.enum(["read-only", "manual", "plan", "acceptEdits", "auto"]).optional(),
     rules: z.array(permissionRuleSchema).default([]),
   })
   .strict();

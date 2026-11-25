@@ -42,6 +42,9 @@ export const runSnapshotSchema = z.object({
 | Run | `start/resume/steer/cancel/get/list/trace` | 任务生命周期与历史 |
 | Subscription | `run.subscribe` | 从 `afterSeq` 恢复并持续订阅 |
 | Approval | `approval.respond` | 对指定 `runId + callId` 做出一次决策 |
+| Mode | `mode.get/set` | 读取或切换当前 run 的 plan/manual/acceptEdits/auto 模式 |
+| Plan | `plan.respond` | 校验 revision 后批准并选择执行模式，或拒绝并携带反馈继续规划 |
+| Permission review | `permission.review.*` | 记录 Auto Reviewer 开始、结论与失败，支持恢复 reviewing 状态 |
 | User input | `input.respond` | 提交 `request_user_input` 的结构化答案 |
 | Artifact | `artifact.read` | 分页读取受限大输出 |
 | Task | `task.list/output/stop/subscribe` | 管理持久后台任务 |

@@ -45,7 +45,7 @@ describe("permission config files", () => {
 
     const bash = new ToolRegistry(createCodingTools()).get("bash");
     if (!bash) throw new Error("Missing bash");
-    const engine = new PolicyEngine(loaded.mode ?? "ask", loaded.rules);
+    const engine = new PolicyEngine(loaded.mode ?? "manual", loaded.rules);
     expect(engine.evaluate(bash, { command: "git", args: ["status"] }).action).toBe("allow");
     expect(engine.evaluate(bash, { command: "git", args: ["push"] }).action).toBe("deny");
   });
@@ -55,6 +55,18 @@ describe("permission config files", () => {
     await writeJson(join(root, "fidoo.policy.json"), {
       version: 1,
       rules: [{ action: "allow", tools: ["bash"], commands: ["*"] }],
+    });
+    await expect(loadPermissionPolicy({ cwd: root, dataHome: join(root, "home") })).rejects.toThrow(
+      "Project policies can only restrict access",
+    );
+  });
+
+  it("rejects project policies that enable automatic edit approval", async () => {
+    const root = await workspace();
+    await writeJson(join(root, "fidoo.policy.json"), {
+      version: 1,
+      mode: "acceptEdits",
+      rules: [],
     });
     await expect(loadPermissionPolicy({ cwd: root, dataHome: join(root, "home") })).rejects.toThrow(
       "Project policies can only restrict access",

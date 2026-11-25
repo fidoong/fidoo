@@ -6,9 +6,11 @@ import { createAgentClient } from "@fidoo/client";
 import { createEvent, errorMessage, replayRun } from "@fidoo/core";
 import {
   createNodeRuntime,
+  detectSandboxInstallation,
   FileEventStore,
   InteractiveApproval,
   LocalWorkspace,
+  loadExecutionConfig,
   loadPermissionPolicy,
   resolveProviderConnection,
 } from "@fidoo/node-runtime";
@@ -38,9 +40,15 @@ program
   .option("--model <name>", "model name; defaults to FIDOO_MODEL")
   .option("--base-url <url>", "OpenAI-compatible API base URL")
   .option("--thinking <mode>", "DeepSeek thinking: enabled or disabled", parseThinking)
-  .option("-y, --yes", "auto-approve medium-risk operations")
   .option("--read-only", "deny all write and execute operations")
+  .option("--dont-ask", "deny every action that would require approval")
+  .option(
+    "--dangerously-bypass-permissions",
+    "bypass prompts only when the required OS sandbox is available",
+  )
   .option("--policy <path>", "additional trusted permission policy JSON")
+  .option("--sandbox <mode>", "OS sandbox: off, auto, or required", parseSandbox)
+  .option("--mode <mode>", "agent behavior: plan, manual, acceptEdits, or auto", parseBehaviorMode)
   .option("--output <format>", "text, json, or jsonl", parseOutput, "text")
   .option("--max-iterations <number>", "agent iteration budget", "40")
   .showHelpAfterError();
@@ -199,12 +207,33 @@ program
       });
       permission = {
         valid: true,
-        mode: options.readOnly ? "read-only" : options.yes ? "auto" : (policy.mode ?? "ask"),
+        mode: options.readOnly ? "read-only" : (options.mode ?? policy.mode ?? "manual"),
         sources: policy.sources,
         ruleCount: policy.rules.length,
       };
     } catch (error) {
       permission = { valid: false, error: errorMessage(error) };
+    }
+    let execution: {
+      valid: boolean;
+      mode?: string;
+      network?: string;
+      backend?: string;
+      degraded?: boolean;
+      error?: string;
+    };
+    try {
+      const config = await loadExecutionConfig(dataHome(), options.sandbox);
+      const installation = await detectSandboxInstallation();
+      execution = {
+        valid: true,
+        mode: config.mode,
+        network: config.network,
+        backend: installation?.backend ?? "direct",
+        degraded: config.mode !== "off" && !installation,
+      };
+    } catch (error) {
+      execution = { valid: false, error: errorMessage(error) };
     }
     process.stdout.write(
       `${JSON.stringify(
@@ -214,6 +243,7 @@ program
           workspace,
           dataHome: dataHome(),
           permission,
+          execution,
           provider,
           model,
           modelConfigured: Boolean(model),
@@ -385,6 +415,18 @@ function safeBaseURL(value: string): string {
   } catch {
     return "invalid Base URL";
   }
+}
+
+function parseBehaviorMode(value: string): "plan" | "manual" | "acceptEdits" | "auto" {
+  if (["plan", "manual", "acceptEdits", "auto"].includes(value)) {
+    return value as "plan" | "manual" | "acceptEdits" | "auto";
+  }
+  throw new InvalidArgumentError("Agent mode must be plan, manual, acceptEdits, or auto");
+}
+
+function parseSandbox(value: string): "off" | "auto" | "required" {
+  if (value === "off" || value === "auto" || value === "required") return value;
+  throw new InvalidArgumentError("Sandbox must be off, auto, or required");
 }
 
 function parseOutput(value: string): OutputFormat {

@@ -1,9 +1,15 @@
-import type { ArtifactReference, BackgroundTask, UserInputQuestion } from "@fidoo/protocol";
+import type {
+  ArtifactReference,
+  BackgroundTask,
+  PermissionMode,
+  UserInputQuestion,
+} from "@fidoo/protocol";
 
 export type TuiPhase =
   | "idle"
   | "starting"
   | "running"
+  | "awaiting_plan"
   | "awaiting_approval"
   | "awaiting_input"
   | "completed"
@@ -66,6 +72,11 @@ export interface ViewTaskPlan {
 export interface TuiState {
   phase: TuiPhase;
   runId: string | undefined;
+  permissionMode: PermissionMode;
+  dontAsk: boolean;
+  bypassPermissions: boolean;
+  reviewingTool: string | undefined;
+  pendingPlan: { planId: string; requestedMode: PermissionMode } | undefined;
   messages: ViewMessage[];
   streamingText: string;
   streamingBlocksStarted: boolean;

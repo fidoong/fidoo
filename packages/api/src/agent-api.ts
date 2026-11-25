@@ -26,6 +26,8 @@ import {
   inputRespondParamsSchema,
   isTerminalRunEvent,
   isTransientRunEvent,
+  modeSetParamsSchema,
+  planRespondParamsSchema,
   runIdParamsSchema,
   runListParamsSchema,
   runResumeParamsSchema,
@@ -142,6 +144,12 @@ export class AgentApi {
         return this.listModels(params);
       case "approval.respond":
         return this.requestResults.run(method, requestId, params, () => this.respond(params));
+      case "mode.get":
+        return this.requestResults.run(method, requestId, params, () => this.getMode(params));
+      case "mode.set":
+        return this.requestResults.run(method, requestId, params, () => this.setMode(params));
+      case "plan.respond":
+        return this.requestResults.run(method, requestId, params, () => this.respondPlan(params));
       case "input.respond":
         return this.requestResults.run(method, requestId, params, () => {
           const input = inputRespondParamsSchema.parse(params);
@@ -260,7 +268,13 @@ export class AgentApi {
       await this.options.workspace.assertDirectory(input.cwd);
       const controller = new AbortController();
       this.active.set(runId, controller);
-      const execution = this.runService.start(input.task, input.cwd, controller.signal, runId);
+      const execution = this.runService.start(
+        input.task,
+        input.cwd,
+        controller.signal,
+        runId,
+        input.mode,
+      );
       this.executions.set(runId, execution);
       void execution
         .catch(() => undefined)
@@ -313,6 +327,45 @@ export class AgentApi {
           resolve();
         }
       });
+    });
+  }
+
+  private async getMode(params: unknown) {
+    const input = runIdParamsSchema.parse(params);
+    const state = replayRun(input.runId, await this.options.eventStore.load(input.runId));
+    return { mode: state.permissionMode };
+  }
+
+  private async setMode(params: unknown) {
+    const input = modeSetParamsSchema.parse(params);
+    return this.commands.run(input.runId, async () => {
+      const state = await this.runService.setMode(input.runId, input.mode);
+      return { mode: state.permissionMode };
+    });
+  }
+
+  private async respondPlan(params: unknown) {
+    this.assertConfigured();
+    const input = planRespondParamsSchema.parse(params);
+    return this.commands.run(input.runId, async () => {
+      if (this.active.has(input.runId)) {
+        throw new AgentError(`Run is already active: ${input.runId}`, "configuration");
+      }
+      await this.runService.decidePlan(
+        input.runId,
+        input.decision,
+        input.mode,
+        input.revision,
+        input.feedback,
+      );
+      const controller = new AbortController();
+      this.active.set(input.runId, controller);
+      const execution = this.runService.resume(input.runId, undefined, controller.signal);
+      this.executions.set(input.runId, execution);
+      void execution
+        .catch((error) => this.recordBackgroundError(input.runId, error))
+        .finally(() => this.clearExecution(input.runId, controller, execution));
+      return { ok: true as const };
     });
   }
 

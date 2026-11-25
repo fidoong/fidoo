@@ -16,7 +16,7 @@ import type { ModelPort } from "../ports/model.js";
 import type { SubagentPort } from "../ports/subagent.js";
 import type { UserInputPort, UserInputQuestion } from "../ports/user-input.js";
 import { LoopDetector } from "../runtime/loop-detector.js";
-import type { PolicyEngine } from "../runtime/policy-engine.js";
+import type { PolicyDecision, PolicyEngine } from "../runtime/policy-engine.js";
 import type { ToolRegistry } from "../runtime/tool-registry.js";
 import { ToolScheduler } from "../runtime/tool-scheduler.js";
 
@@ -38,6 +38,11 @@ export interface AgentLoopOptions {
   userInput?: UserInputPort;
   subagents?: SubagentPort;
   systemPrompt: string;
+  permissionMode?: import("../runtime/policy-engine.js").PermissionMode;
+  dontAsk?: boolean;
+  bypassPermissions?: boolean;
+  autoReview?: import("../ports/auto-review.js").AutoReviewPort;
+  projectTrusted?: boolean;
   cacheKey?: string;
   observer?: RuntimeObserver;
   maxIterations?: number;
@@ -49,6 +54,7 @@ export class AgentLoop {
   private readonly loops = new LoopDetector();
   private readonly scheduler = new ToolScheduler();
   private sequence = 0;
+  private iteration = 0;
   private steeringVersion = 0;
   private appendChain: Promise<void> = Promise.resolve();
   private state: RunState;
@@ -120,6 +126,15 @@ export class AgentLoop {
     return this.state;
   }
 
+  async setMode(mode: import("../runtime/policy-engine.js").PermissionMode): Promise<void> {
+    if (this.state.permissionMode === "read-only") {
+      throw new AgentError("Read-only mode cannot be changed during a run", "configuration");
+    }
+    if (this.state.permissionMode !== mode) {
+      await this.append("mode.changed", { mode, reason: "Mode changed through API" });
+    }
+  }
+
   private async flushSteering(): Promise<void> {
     for (const [instructionId, task] of [...this.state.steeringRequests]) {
       if (!this.state.steeringRequests.has(instructionId)) {
@@ -153,6 +168,7 @@ export class AgentLoop {
   }
 
   private async nextAssistant(iteration: number, signal: AbortSignal): Promise<AssistantMessage> {
+    this.iteration = iteration;
     const built = buildModelRequest(this.state, {
       model: this.options.modelName,
       systemPrompt: this.options.systemPrompt,
@@ -231,6 +247,27 @@ export class AgentLoop {
   private async complete(assistant: AssistantMessage, steeringAtStart: number): Promise<boolean> {
     if (this.steeringVersion !== steeringAtStart) {
       return false;
+    }
+    if (this.state.permissionMode === "plan") {
+      if (this.state.dontAsk) {
+        await this.append("run.blocked", {
+          reason: "Plan approval is required, but dontAsk is enabled for this run",
+        });
+        return true;
+      }
+      if (!this.state.plan) {
+        await this.append("verification.requested", {
+          attempt: this.state.verificationAttempts + 1,
+          reason:
+            "Plan mode requires a visible plan before approval. Use update_plan with concrete steps, then present the plan for user approval. Do not edit files or run non-read-only commands.",
+        });
+        return false;
+      }
+      await this.append("plan.awaiting_approval", {
+        planId: this.state.plan.id,
+        requestedMode: "manual",
+      });
+      return true;
     }
     const report = verificationReport(this.state, this.options.requiredChecks);
     if (!report.passed) {
@@ -321,7 +358,21 @@ export class AgentLoop {
       return;
     }
 
-    const policy = this.options.policy.evaluate(tool, input);
+    let policy = this.options.policy.evaluate(
+      tool,
+      input,
+      this.state.permissionMode,
+      this.state.bypassPermissions,
+    );
+    if (this.state.dontAsk && policy.action === "ask") {
+      policy = { ...policy, action: "deny", reason: `dontAsk denied: ${policy.reason}` };
+    }
+    if (policy.requiresReview) {
+      policy = await this.reviewPolicy(call, tool, input, policy, signal);
+      if (this.state.dontAsk && policy.action === "ask") {
+        policy = { ...policy, action: "deny", reason: `dontAsk denied: ${policy.reason}` };
+      }
+    }
     if (policy.action === "deny") {
       await this.append("tool.decided", {
         callId: call.id,
@@ -359,6 +410,12 @@ export class AgentLoop {
     }
 
     await this.append("tool.started", { callId: call.id });
+    if (tool.interaction === "user-input" && this.state.dontAsk) {
+      await this.append("run.blocked", {
+        reason: "User input is required, but dontAsk is enabled for this run",
+      });
+      return;
+    }
     if (tool.interaction === "user-input") {
       await this.append("user_input.required", {
         callId: call.id,
@@ -389,6 +446,7 @@ export class AgentLoop {
           ...(result.verification ? { verification: result.verification } : {}),
           ...(result.verifications ? { verifications: result.verifications } : {}),
           ...(result.images ? { images: result.images } : {}),
+          ...(result.execution ? { execution: result.execution } : {}),
         },
       });
       if (result.planUpdate) {
@@ -402,6 +460,46 @@ export class AgentLoop {
         throw error;
       }
       await this.recordError(call, errorMessage(error));
+    }
+  }
+
+  private async reviewPolicy(
+    call: ToolCall,
+    tool: NonNullable<ReturnType<ToolRegistry["get"]>>,
+    input: unknown,
+    policy: PolicyDecision,
+    signal: AbortSignal,
+  ): Promise<PolicyDecision> {
+    if (this.state.dontAsk) return { ...policy, action: "deny" };
+    if (!this.options.autoReview) {
+      return { ...policy, action: "ask", reason: "Auto reviewer is not configured" };
+    }
+    await this.append("permission.review.started", { callId: call.id, tool: tool.name });
+    try {
+      const review = await this.options.autoReview.review(
+        {
+          task: this.state.task,
+          tool,
+          arguments: input,
+          risk: policy.risk,
+          projectTrusted: this.options.projectTrusted ?? false,
+        },
+        signal,
+      );
+      await this.append("permission.review.completed", {
+        callId: call.id,
+        action: review.action,
+        category: review.category,
+        reason: review.reason,
+      });
+      if (review.usage) {
+        await this.append("model.usage", { iteration: this.iteration, ...review.usage });
+      }
+      return { ...policy, action: review.action, reason: review.reason };
+    } catch (error) {
+      const message = errorMessage(error);
+      await this.append("permission.review.failed", { callId: call.id, error: message });
+      return { ...policy, action: "ask", reason: `Auto review failed: ${message}` };
     }
   }
 

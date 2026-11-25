@@ -31,7 +31,6 @@ describe("runtime model settings", () => {
       baseURL: "https://api.openai.com/v1",
       thinking: "enabled" as const,
       dataHome: root,
-      autoApprove: false,
       readOnly: true,
       maxIterations: 10,
       maxContextTokens: 100_000,
@@ -58,7 +57,7 @@ describe("runtime model settings", () => {
     });
     expect(updated).toMatchObject({ model: "gpt-4.1-mini", hasApiKey: true });
     const mode = (await stat(join(root, "models.json"))).mode & 0o777;
-    expect(mode).toBe(0o600);
+    if (process.platform !== "win32") expect(mode).toBe(0o600);
     expect(readProviderConnection(root)).toMatchObject({
       provider: "openai",
       model: "gpt-4.1-mini",

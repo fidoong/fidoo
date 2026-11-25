@@ -126,9 +126,19 @@
 
 ### I. Provider 与安全
 
+状态：前台/后台命令统一执行层、环境变量允许列表、run 专属 HOME/TMPDIR、macOS Seatbelt、Linux/WSL2 Bubblewrap、网络默认拒绝、off/auto/required 配置和 doctor 诊断已完成；Windows 环境兼容、进程树终止与 windows-latest CI 已接入。原生 Windows 按 Claude Code 策略仅提供 direct，沙箱需将整个 Fidoo 放入 WSL2，不再使用 Docker Windows 后端。CPU/内存限额和按域名放行仍待后续；Bubblewrap/WSL2 仍需对应真实环境验收。
+
 - 流式中途故障恢复、Retry-After、能力探测、费用和运行预算。
-- 可选操作系统沙箱、网络控制、环境变量最小化及事件/Artifact 密钥脱敏。
-- 审批超时、会话级授权和项目信任机制。
+- 事件/Artifact 写入前密钥脱敏、组织级执行策略和项目信任机制。
+- 审批超时、会话级授权、容器隔离和企业网络控制。
+
+### J. 行为模式与权限交互
+
+状态：plan/manual/acceptEdits/auto、read-only/dontAsk 硬约束、Plan revision 防过期、真实 AutoReviewPort、审查事件与用量、受限 bypass、CLI --mode、TUI Shift+Tab、/mode/reviewing 和计划批准/拒绝已完成。v2 已移除 ask、旧 auto 和 --yes。精确规则保存、组织 allowedModes 和项目信任仍待后续。
+
+- Plan 批准前不得产生 mutation，拒绝后保持只读并继续规划。
+- acceptEdits 只自动接受工作区编辑，不自动放行普通 Bash。
+- 后续补 AutoReviewPort、超时失败回退、审批授权 scope 和组织策略锁。
 
 ## P2：消费级终端体验
 

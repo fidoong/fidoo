@@ -12,6 +12,7 @@ export type WorkspaceValidateResult = z.infer<typeof workspaceValidateResultSche
 export const runStartParamsSchema = z.object({
   task: z.string().min(1),
   cwd: z.string().min(1),
+  mode: z.enum(["manual", "plan", "acceptEdits", "auto"]).optional(),
 });
 export const runStartResultSchema = z.object({ runId: z.string().min(1) });
 export type RunStartParams = z.infer<typeof runStartParamsSchema>;
@@ -43,12 +44,24 @@ export const runListParamsSchema = z.object({
 });
 export type RunListParams = z.infer<typeof runListParamsSchema>;
 
-export const runStatusSchema = z.enum(["running", "completed", "failed", "blocked", "cancelled"]);
+export const runStatusSchema = z.enum([
+  "running",
+  "awaiting_plan",
+  "completed",
+  "failed",
+  "blocked",
+  "cancelled",
+]);
+export const permissionModeSchema = z.enum(["read-only", "manual", "plan", "acceptEdits", "auto"]);
+export type PermissionMode = z.infer<typeof permissionModeSchema>;
 export const runSnapshotSchema = z.object({
   runId: z.string(),
   task: z.string(),
   cwd: z.string(),
   status: runStatusSchema,
+  permissionMode: permissionModeSchema.optional(),
+  dontAsk: z.boolean().optional(),
+  bypassPermissions: z.boolean().optional(),
   changedFiles: z.array(z.string()),
   verified: z.boolean(),
   finalSummary: z.string().optional(),
@@ -73,6 +86,21 @@ export const approvalRespondParamsSchema = z.object({
   reason: z.string().optional(),
 });
 export type ApprovalRespondParams = z.infer<typeof approvalRespondParamsSchema>;
+
+export const modeSetParamsSchema = z.object({
+  runId: z.string().min(1),
+  mode: permissionModeSchema.exclude(["read-only"]),
+});
+export type ModeSetParams = z.infer<typeof modeSetParamsSchema>;
+
+export const planRespondParamsSchema = z.object({
+  runId: z.string().min(1),
+  revision: z.number().int().positive(),
+  decision: z.enum(["approved", "rejected"]),
+  mode: z.enum(["manual", "acceptEdits", "auto"]).default("manual"),
+  feedback: z.string().max(4000).optional(),
+});
+export type PlanRespondParams = z.infer<typeof planRespondParamsSchema>;
 
 export const apiResultSchema = z.object({ ok: z.literal(true) });
 

@@ -1,6 +1,7 @@
 import type { RequiredCheck, ToolDefinition } from "@fidoo/core";
 import { trackMutation } from "../changes/track-mutation.js";
 import { WorkspaceChangeManager } from "../changes/workspace-change-manager.js";
+import { CommandExecutor } from "../execution/command-executor.js";
 import { BackgroundTaskManager } from "../tasks/background-task-manager.js";
 import { createBashTool } from "./bash.js";
 import { editFileTool } from "./edit.js";
@@ -21,6 +22,7 @@ export function createCodingTools(
   tasks = new BackgroundTaskManager(),
   requiredChecks: readonly RequiredCheck[] = [],
   changes = new WorkspaceChangeManager(),
+  executor = new CommandExecutor(),
 ): ToolDefinition[] {
   return [
     readFileTool,
@@ -34,8 +36,8 @@ export function createCodingTools(
     trackMutation(writeFileTool, changes),
     ...createMutationTools(changes),
     ...createWorkspaceTools(changes),
-    createBashTool(tasks, requiredChecks),
-    createRequiredChecksTool(requiredChecks, changes),
+    createBashTool(tasks, requiredChecks, executor),
+    createRequiredChecksTool(requiredChecks, changes, executor),
     ...createTaskTools(tasks),
     reportBlockedTool,
   ];

@@ -1,8 +1,14 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AgentError } from "@fidoo/core";
-import type { NodeRuntimeConfig, ProviderKind, ThinkingMode } from "@fidoo/node-runtime";
+import type {
+  NodeRuntimeConfig,
+  ProviderKind,
+  SandboxMode,
+  ThinkingMode,
+} from "@fidoo/node-runtime";
 import { parseProviderKind, resolveProviderConnection } from "@fidoo/node-runtime";
+import type { PermissionMode } from "@fidoo/protocol";
 
 export interface ServerOptions {
   stdio?: boolean;
@@ -11,9 +17,12 @@ export interface ServerOptions {
   model?: string;
   baseUrl?: string;
   thinking?: ThinkingMode;
-  yes?: boolean;
   readOnly?: boolean;
+  dontAsk?: boolean;
+  dangerouslyBypassPermissions?: boolean;
   policy?: string;
+  sandbox?: SandboxMode;
+  mode?: Exclude<PermissionMode, "read-only">;
   maxIterations: string;
 }
 
@@ -33,8 +42,8 @@ export function resolveServerConfig(options: ServerOptions): NodeRuntimeConfig {
   if (provider !== "deepseek" && (options.thinking ?? process.env.FIDOO_THINKING)) {
     throw new AgentError("--thinking is only supported with --provider deepseek", "configuration");
   }
-  if (options.yes && options.readOnly) {
-    throw new AgentError("--yes and --read-only cannot be used together", "configuration");
+  if (options.readOnly && options.mode === "auto") {
+    throw new AgentError("--read-only cannot be combined with --mode auto", "configuration");
   }
   const maxIterations = Number.parseInt(options.maxIterations, 10);
   if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > 200) {
@@ -45,9 +54,12 @@ export function resolveServerConfig(options: ServerOptions): NodeRuntimeConfig {
     ...connection,
     thinking,
     dataHome,
-    autoApprove: options.yes ?? false,
     readOnly: options.readOnly ?? false,
+    dontAsk: options.dontAsk ?? false,
+    bypassPermissions: options.dangerouslyBypassPermissions ?? false,
     ...(options.policy ? { policyFile: options.policy } : {}),
+    ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+    ...(options.mode ? { mode: options.mode } : {}),
     maxIterations,
   };
 }

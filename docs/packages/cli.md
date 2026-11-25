@@ -35,7 +35,7 @@ fidoo trace <run-id>
 fidoo doctor
 ```
 
-`--read-only` 与 `--yes` 是显式权限模式。高风险命令不会因为使用 TUI 而绕过审批；无效策略文件也不会静默退回宽松配置。
+`--read-only`、`--dont-ask` 和 `--dangerously-bypass-permissions` 是显式安全控制。高风险命令不会因为使用 TUI 而绕过审批；bypass 只能在 required 沙箱可用时启动，无效策略文件也不会静默退回宽松配置。
 
 ## 公共事件输出
 
@@ -73,7 +73,7 @@ process.argv
 额外校验包括：
 
 - `--thinking` 只允许 DeepSeek，值只能是 enabled 或 disabled。
-- `--yes` 与 `--read-only` 互斥。
+- `--read-only` 不能与 auto 或 bypass 组合，bypass 必须同时满足 `sandbox=required`。
 - `--max-iterations` 必须是 1 到 200 的整数。
 - cwd 通过 `resolve` 规范化，FIDOO_HOME 默认是 `~/.fidoo`。
 - `allowUnconfigured` 仅供设置或诊断等无需模型的入口使用。

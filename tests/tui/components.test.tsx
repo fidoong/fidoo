@@ -77,7 +77,7 @@ describe("TUI themed components", () => {
     };
     const view = render(<StatusBar state={state} />);
     expect(view.lastFrame()).toContain("model turn 15");
-    expect(view.lastFrame()).toContain("guidance queued (1)");
+    expect(view.lastFrame()).toContain("guidance (1)");
     view.unmount();
   });
 

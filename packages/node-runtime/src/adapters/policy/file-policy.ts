@@ -61,7 +61,8 @@ export async function loadPermissionPolicy(
       const config = permissionConfigSchema.parse(JSON.parse(source));
       if (
         !candidate.trusted &&
-        (config.mode === "auto" || config.rules.some((rule) => rule.action === "allow"))
+        (["auto", "acceptEdits"].includes(config.mode ?? "") ||
+          config.rules.some((rule) => rule.action === "allow"))
       ) {
         throw new Error(
           "Project policies can only restrict access; allow rules and auto mode require a trusted user config",

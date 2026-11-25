@@ -5,6 +5,8 @@ import type {
   ArtifactReadParams,
   BackgroundTaskEvent,
   InputRespondParams,
+  ModeSetParams,
+  PlanRespondParams,
   ProviderModelsParams,
   RunIdParams,
   RunListParams,
@@ -23,6 +25,7 @@ import {
   artifactPageSchema,
   backgroundTaskEventSchema,
   backgroundTaskSchema,
+  permissionModeSchema,
   providerModelsResultSchema,
   providerSettingsSchema,
   publicRunEventSchema,
@@ -39,6 +42,8 @@ export class AgentClient {
   readonly run: RunClient;
   readonly artifacts: ArtifactClient;
   readonly approval: ApprovalClient;
+  readonly mode: ModeClient;
+  readonly plan: PlanClient;
   readonly input: UserInputClient;
   readonly settings: SettingsClient;
   readonly tasks: TaskClient;
@@ -48,6 +53,8 @@ export class AgentClient {
     this.run = new RunClient(transport);
     this.artifacts = new ArtifactClient(transport);
     this.approval = new ApprovalClient(transport);
+    this.mode = new ModeClient(transport);
+    this.plan = new PlanClient(transport);
     this.input = new UserInputClient(transport);
     this.settings = new SettingsClient(transport);
     this.tasks = new TaskClient(transport);
@@ -153,6 +160,30 @@ class TaskClient {
     for await (const event of this.transport.subscribe("task.subscribe", {})) {
       yield backgroundTaskEventSchema.parse(event);
     }
+  }
+}
+
+class ModeClient {
+  constructor(private readonly transport: AgentTransport) {}
+
+  async get(params: RunIdParams) {
+    return z
+      .object({ mode: permissionModeSchema })
+      .parse(await this.transport.call("mode.get", params));
+  }
+
+  async set(params: ModeSetParams) {
+    return z
+      .object({ mode: permissionModeSchema })
+      .parse(await this.transport.call("mode.set", params));
+  }
+}
+
+class PlanClient {
+  constructor(private readonly transport: AgentTransport) {}
+
+  async respond(params: PlanRespondParams) {
+    return apiResultSchema.parse(await this.transport.call("plan.respond", params));
   }
 }
 

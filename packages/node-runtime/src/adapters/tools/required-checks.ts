@@ -7,14 +7,16 @@ import {
 } from "@fidoo/core";
 import { z } from "zod";
 import type { WorkspaceChangeManager } from "../changes/workspace-change-manager.js";
+import type { CommandExecutor } from "../execution/command-executor.js";
 import { createBashTool } from "./bash.js";
 import { boundedOutput } from "./output.js";
 
 export function createRequiredChecksTool(
   requiredChecks: readonly RequiredCheck[],
   changes: WorkspaceChangeManager,
+  executor?: CommandExecutor,
 ) {
-  const bash = createBashTool(undefined, requiredChecks);
+  const bash = createBashTool(undefined, requiredChecks, executor);
   return defineTool({
     name: "run_required_checks",
     description:

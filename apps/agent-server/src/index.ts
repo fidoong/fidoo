@@ -21,9 +21,15 @@ program
   .option("--model <name>", "model name; defaults to FIDOO_MODEL")
   .option("--base-url <url>", "OpenAI-compatible API base URL")
   .option("--thinking <mode>", "DeepSeek thinking: enabled or disabled", parseThinking)
-  .option("-y, --yes", "auto-approve medium-risk operations")
   .option("--read-only", "deny all write and execute operations")
+  .option("--dont-ask", "deny every action that would require approval")
+  .option(
+    "--dangerously-bypass-permissions",
+    "bypass prompts only when the required OS sandbox is available",
+  )
   .option("--policy <path>", "additional trusted permission policy JSON")
+  .option("--sandbox <mode>", "OS sandbox: off, auto, or required", parseSandbox)
+  .option("--mode <mode>", "agent behavior: plan, manual, acceptEdits, or auto", parseBehaviorMode)
   .option("--max-iterations <number>", "agent iteration budget", "40")
   .configureOutput({
     writeOut: (text) => process.stderr.write(text),
@@ -58,6 +64,18 @@ try {
 } catch (error) {
   process.stderr.write(`Error: ${errorMessage(error)}\n`);
   process.exitCode = 1;
+}
+
+function parseBehaviorMode(value: string): "plan" | "manual" | "acceptEdits" | "auto" {
+  if (["plan", "manual", "acceptEdits", "auto"].includes(value)) {
+    return value as "plan" | "manual" | "acceptEdits" | "auto";
+  }
+  throw new InvalidArgumentError("Agent mode must be plan, manual, acceptEdits, or auto");
+}
+
+function parseSandbox(value: string): "off" | "auto" | "required" {
+  if (value === "off" || value === "auto" || value === "required") return value;
+  throw new InvalidArgumentError("Sandbox must be off, auto, or required");
 }
 
 function parseThinking(value: string): "enabled" | "disabled" {

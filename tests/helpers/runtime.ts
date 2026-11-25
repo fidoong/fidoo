@@ -1,6 +1,7 @@
 import type {
   ApprovalPort,
   AssistantMessage,
+  AutoReviewPort,
   ModelUsage,
   PermissionMode,
   RequiredCheck,
@@ -42,6 +43,9 @@ export function testRuntime(
     usage?: Pick<ModelUsage, "inputTokens" | "outputTokens"> & Partial<ModelUsage>;
     requiredChecks?: RequiredCheck[];
     userInput?: UserInputPort;
+    autoReview?: AutoReviewPort;
+    dontAsk?: boolean;
+    bypassPermissions?: boolean;
   } = {},
 ) {
   const store = new MemoryEventStore();
@@ -61,6 +65,10 @@ export function testRuntime(
     approval: options.approval ?? approveAll,
     ...(options.userInput ? { userInput: options.userInput } : {}),
     policy: new PolicyEngine(options.permission ?? "auto"),
+    permissionMode: options.permission ?? "auto",
+    dontAsk: options.dontAsk ?? false,
+    bypassPermissions: options.bypassPermissions ?? false,
+    ...(options.autoReview ? { autoReview: options.autoReview } : {}),
     systemPrompt: BASE_SYSTEM_PROMPT,
     ...(options.requiredChecks ? { requiredChecks: options.requiredChecks } : {}),
     maxIterations: 10,

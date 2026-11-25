@@ -1,5 +1,5 @@
 import type { ZodType } from "zod";
-import type { ImageReference } from "../domain/messages.js";
+import type { ExecutionObservation, ImageReference } from "../domain/messages.js";
 import type { TaskPlanUpdate } from "../domain/plan.js";
 import type { VerificationEvidence } from "../domain/verification.js";
 import type { ArtifactReference, ArtifactStore } from "./artifacts.js";
@@ -30,6 +30,7 @@ export interface ToolResult {
   verification?: VerificationEvidence;
   verifications?: VerificationEvidence[];
   images?: ImageReference[];
+  execution?: ExecutionObservation;
 }
 
 export interface ToolDefinition {

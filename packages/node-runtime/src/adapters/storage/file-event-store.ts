@@ -121,6 +121,7 @@ export class FileEventStore implements EventStore {
           event.type === "run.failed" ||
           event.type === "run.blocked" ||
           event.type === "run.cancelled" ||
+          event.type === "plan.awaiting_approval" ||
           event.type === "run.resumed",
       );
       const last = events.at(-1);
@@ -137,7 +138,9 @@ export class FileEventStore implements EventStore {
                 ? "blocked"
                 : terminal?.type === "run.cancelled"
                   ? "cancelled"
-                  : "running",
+                  : terminal?.type === "plan.awaiting_approval"
+                    ? "awaiting_plan"
+                    : "running",
         createdAt: started.timestamp,
         updatedAt: last?.timestamp ?? started.timestamp,
       });

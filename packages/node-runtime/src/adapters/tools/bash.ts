@@ -9,6 +9,8 @@ import {
 } from "@fidoo/core";
 import { execa } from "execa";
 import { z } from "zod";
+import { CommandExecutor } from "../execution/command-executor.js";
+import { terminateProcessTree } from "../execution/process.js";
 import { resolveExistingPath } from "../system/workspace.js";
 import { BackgroundTaskManager } from "../tasks/background-task-manager.js";
 import { boundedOutput } from "./output.js";
@@ -24,6 +26,7 @@ const inputSchema = z.object({
 export function createBashTool(
   tasks = new BackgroundTaskManager(),
   requiredChecks: readonly RequiredCheck[] = [],
+  executor = new CommandExecutor(),
 ) {
   return defineTool({
     name: "bash",
@@ -42,22 +45,40 @@ export function createBashTool(
         input.args,
         input.cwd,
       );
+      const prepared = await executor.prepare({
+        runId: context.runId,
+        command: input.command,
+        args: input.args,
+        cwd,
+        workspace: context.cwd,
+      });
+      const execution = {
+        backend: prepared.backend,
+        network: prepared.network,
+        environment: "isolated" as const,
+        ...(prepared.warning ? { warning: prepared.warning } : {}),
+      };
       if (input.background) {
         const task = await tasks.start({
           runId: context.runId,
           command: input.command,
           args: input.args,
           cwd,
+          workspace: context.cwd,
+          prepared,
         });
         return {
           summary: `Started background task ${task.taskId}: ${formatCommand(input.command, input.args)}`,
-          content: JSON.stringify(task),
+          content: JSON.stringify({ ...task, execution }),
           success: true,
+          execution,
         };
       }
       const startedAt = Date.now();
-      const subprocess = execa(input.command, input.args, {
+      const subprocess = execa(prepared.command, prepared.args, {
         cwd,
+        env: prepared.env,
+        extendEnv: false,
         shell: false,
         reject: false,
         all: true,
@@ -72,11 +93,7 @@ export function createBashTool(
       let timedOut = false;
       let forceTimer: ReturnType<typeof setTimeout> | undefined;
       const terminate = (signal: NodeJS.Signals) => {
-        if (process.platform !== "win32" && subprocess.pid) {
-          try {
-            process.kill(-subprocess.pid, signal);
-          } catch {}
-        }
+        if (subprocess.pid) terminateProcessTree(subprocess.pid, signal);
         subprocess.kill(signal);
       };
       const abort = () => {
@@ -125,11 +142,12 @@ export function createBashTool(
               ...(failure ? { failure } : {}),
             }
           : undefined;
-        const content = `$ ${command}\nExit code: ${exitCode}\n${status}\n\n${output}${verification ? `\n\nVerification: ${JSON.stringify(verification)}` : ""}`;
+        const content = `$ ${command}\nExecution: ${JSON.stringify(execution)}\nExit code: ${exitCode}\n${status}\n\n${output}${verification ? `\n\nVerification: ${JSON.stringify(verification)}` : ""}`;
         return {
           summary: `${status}: ${command}${succeeded ? "" : ` (exit code ${exitCode})`}`,
           ...(await boundedOutput(context, "command-output.txt", content)),
           success: succeeded,
+          execution,
           ...(verification ? { verification } : {}),
         };
       } finally {

@@ -13,7 +13,9 @@ import { PlanPanel } from "./components/conversation/plan-panel.js";
 import { ApprovalDialog } from "./components/dialogs/approval-dialog.js";
 import { CommandDialog } from "./components/dialogs/command-dialog.js";
 import { HelpDialog } from "./components/dialogs/help-dialog.js";
+import { ModeDialog, modeIds } from "./components/dialogs/mode-dialog.js";
 import { OutputDialog } from "./components/dialogs/output-dialog.js";
+import { PlanApprovalDialog } from "./components/dialogs/plan-approval-dialog.js";
 import { ReasoningDialog } from "./components/dialogs/reasoning-dialog.js";
 import { SessionsDialog } from "./components/dialogs/sessions-dialog.js";
 import { SettingsDialog } from "./components/dialogs/settings-dialog.js";
@@ -60,6 +62,8 @@ type DialogState =
   | { type: "sessions"; sessions: RunSummary[]; selected: number }
   | { type: "trace"; events: PublicRunEvent[] }
   | { type: "commands"; selected: number }
+  | { type: "mode"; selected: number }
+  | { type: "plan_approval"; selected: number }
   | { type: "theme"; selected: number }
   | { type: "help" }
   | { type: "status" }
@@ -126,6 +130,14 @@ export function TuiApp({
       );
     }
   }, [state.pendingInput]);
+
+  useEffect(() => {
+    if (state.pendingPlan) {
+      setDialog((current) =>
+        current?.type === "plan_approval" ? current : { type: "plan_approval", selected: 0 },
+      );
+    }
+  }, [state.pendingPlan]);
 
   const showSettings = async () => {
     try {
@@ -318,6 +330,8 @@ export function TuiApp({
       toggleReasoning();
     } else if (value === "/plan") {
       togglePlan();
+    } else if (value === "/mode") {
+      setDialog({ type: "mode", selected: 0 });
     } else if (value === "/output") {
       showOutput();
     } else if (value === "/status") {
@@ -366,6 +380,8 @@ export function TuiApp({
         setDialog(undefined);
       } else if (dialog.type === "output" && key.ctrl && input === "o") {
         setDialog(undefined);
+      } else if (dialog.type === "plan_approval" && key.escape) {
+        void controller.respondPlan("rejected", "manual", "Revise the plan with more detail");
       } else if (key.escape && dialog.type !== "user_input") {
         setDialog(undefined);
       } else if (dialog.type === "output" && (key.downArrow || input === "j")) {
@@ -380,7 +396,9 @@ export function TuiApp({
             ? dialog.sessions.length
             : dialog.type === "commands"
               ? paletteDefinitions.length
-              : THEME_PRESET_IDS.length;
+              : dialog.type === "mode" || dialog.type === "plan_approval"
+                ? 4
+                : THEME_PRESET_IDS.length;
         setDialog({ ...dialog, selected: Math.min(Math.max(0, length - 1), dialog.selected + 1) });
       } else if (dialog.type === "sessions" && key.return) {
         const session = dialog.sessions[dialog.selected];
@@ -392,6 +410,21 @@ export function TuiApp({
         if (command) {
           setDialog(undefined);
           submit(command.name);
+        }
+      } else if (dialog.type === "mode" && key.return) {
+        const mode = modeIds[dialog.selected];
+        if (mode) {
+          setDialog(undefined);
+          void controller.setMode(mode).catch((error) => setCommandNotice(errorText(error)));
+        }
+      } else if (dialog.type === "plan_approval" && key.return) {
+        const selected = dialog.selected;
+        setDialog(undefined);
+        if (selected === 3) {
+          void controller.respondPlan("rejected", "manual", "Revise the plan with more detail");
+        } else {
+          const mode = selected === 0 ? "acceptEdits" : selected === 1 ? "auto" : "manual";
+          void controller.respondPlan("approved", mode);
         }
       } else if (dialog.type === "theme" && key.return) {
         void selectTheme(dialog.selected);
@@ -412,6 +445,10 @@ export function TuiApp({
       } else if (input === "n" || key.escape) {
         void controller.respond("rejected");
       }
+      return;
+    }
+    if (key.tab && key.shift) {
+      void controller.cycleMode().catch((error) => setCommandNotice(errorText(error)));
       return;
     }
     if (key.ctrl && input === "k") {
@@ -453,6 +490,10 @@ export function TuiApp({
           <TraceDialog events={dialog.events} />
         ) : dialog?.type === "commands" ? (
           <CommandDialog selected={dialog.selected} />
+        ) : dialog?.type === "mode" ? (
+          <ModeDialog current={state.permissionMode} selected={dialog.selected} />
+        ) : dialog?.type === "plan_approval" ? (
+          <PlanApprovalDialog plan={state.taskPlan} selected={dialog.selected} />
         ) : dialog?.type === "theme" ? (
           <ThemeDialog selected={dialog.selected} current={activeTheme.preset} />
         ) : dialog?.type === "help" ? (

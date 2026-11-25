@@ -1,3 +1,4 @@
+import type { PermissionMode } from "../runtime/policy-engine.js";
 import type { AgentEvent } from "./events.js";
 import type { Message, ToolCall } from "./messages.js";
 import type { TaskPlan } from "./plan.js";
@@ -19,13 +20,22 @@ export interface VerificationReport {
   pendingChecks: RequiredCheck[];
 }
 
-export type RunStatus = "running" | "completed" | "failed" | "blocked" | "cancelled";
+export type RunStatus =
+  | "running"
+  | "awaiting_plan"
+  | "completed"
+  | "failed"
+  | "blocked"
+  | "cancelled";
 
 export interface RunState {
   runId: string;
   task: string;
   cwd: string;
   status: RunStatus;
+  permissionMode: PermissionMode;
+  dontAsk: boolean;
+  bypassPermissions: boolean;
   messages: Message[];
   calls: Map<string, ToolCall>;
   results: Map<string, AgentEvent & { type: "tool.result" }>;
@@ -48,6 +58,9 @@ export function emptyRunState(runId: string): RunState {
     task: "",
     cwd: "",
     status: "running",
+    permissionMode: "manual",
+    dontAsk: false,
+    bypassPermissions: false,
     messages: [],
     calls: new Map(),
     results: new Map(),
@@ -71,6 +84,9 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
     case "run.started":
       state.task = event.payload.task;
       state.cwd = event.payload.cwd;
+      state.permissionMode = event.payload.permissionMode ?? "manual";
+      state.dontAsk = event.payload.dontAsk ?? false;
+      state.bypassPermissions = event.payload.bypassPermissions ?? false;
       break;
     case "run.resumed":
       state.status = "running";
@@ -96,6 +112,15 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
     }
     case "plan.updated":
       state.plan = event.payload.plan;
+      break;
+    case "mode.changed":
+      state.permissionMode = event.payload.mode;
+      break;
+    case "plan.awaiting_approval":
+      state.status = "awaiting_plan";
+      break;
+    case "plan.approved":
+    case "plan.rejected":
       break;
     case "tool.proposed":
       state.calls.set(event.payload.call.id, event.payload.call);
@@ -167,6 +192,9 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
       break;
     case "model.completed":
     case "model.failed":
+    case "permission.review.started":
+    case "permission.review.completed":
+    case "permission.review.failed":
     case "tool.approval_required":
     case "tool.decided":
     case "tool.started":

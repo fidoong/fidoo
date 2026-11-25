@@ -71,6 +71,35 @@ describe("TUI keyboard flow", () => {
     await vi.waitFor(() => expect(lastFrame()).not.toContain("edit_file output"));
   });
 
+  it("cycles behavior mode with Shift+Tab before starting a run", async () => {
+    const transport = new KeyboardTransport("approval");
+    const { lastFrame, stdin } = renderSession(transport);
+    stdin.write("\u001b[Z");
+    await vi.waitFor(() => expect(lastFrame()).toContain("EDIT"));
+    stdin.write("Fix value");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Fix value"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(transport.started).toBe(1));
+    expect(transport.startParams[0]).toMatchObject({ mode: "acceptEdits" });
+  });
+
+  it("approves a read-only plan into Accept Edits mode", async () => {
+    const transport = new KeyboardTransport("plan");
+    const { lastFrame, stdin } = renderSession(transport);
+    stdin.write("Plan a fix");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Plan a fix"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Plan ready"));
+    expect(lastFrame()).toContain("Approve & Edit");
+    stdin.write("\r");
+    await vi.waitFor(() => expect(transport.planResponses).toHaveLength(1));
+    expect(transport.planResponses[0]).toMatchObject({
+      decision: "approved",
+      mode: "acceptEdits",
+    });
+    await vi.waitFor(() => expect(lastFrame()).toContain("completed"));
+  });
+
   it("cancels the active run with Ctrl+C", async () => {
     const transport = new KeyboardTransport("cancel");
     const { lastFrame, stdin } = renderSession(transport);
@@ -185,17 +214,29 @@ function renderSession(
 
 class KeyboardTransport implements AgentTransport {
   readonly approvals: unknown[] = [];
+  readonly startParams: Record<string, unknown>[] = [];
+  readonly planResponses: Record<string, unknown>[] = [];
   started = 0;
   cancelled = false;
   private readonly approvalGate = deferred();
   private readonly cancelGate = deferred();
+  private readonly planGate = deferred();
 
-  constructor(private readonly scenario: "approval" | "cancel" | "blocked") {}
+  constructor(private readonly scenario: "approval" | "cancel" | "blocked" | "plan") {}
 
   async call(method: ApiMethod, params: unknown): Promise<unknown> {
     if (method === "run.start") {
       this.started += 1;
+      this.startParams.push(params as Record<string, unknown>);
       return { runId: "run-1" };
+    }
+    if (method === "plan.respond") {
+      this.planResponses.push(params as Record<string, unknown>);
+      this.planGate.resolve();
+      return { ok: true };
+    }
+    if (method === "mode.set") {
+      return { mode: (params as { mode: string }).mode };
     }
     if (method === "approval.respond") {
       this.approvals.push(params);
@@ -211,13 +252,40 @@ class KeyboardTransport implements AgentTransport {
   }
 
   async *subscribe(_method: "run.subscribe", _params: unknown): AsyncIterable<unknown> {
-    yield event(1, "run.started", { task: "Keyboard task", cwd: "/workspace" });
+    yield event(1, "run.started", {
+      task: "Keyboard task",
+      cwd: "/workspace",
+      permissionMode: this.scenario === "plan" ? "plan" : "manual",
+    });
     yield event(2, "message.user", {
       message: { role: "user", source: "user", content: "Keyboard task" },
     });
     if (this.scenario === "cancel") {
       await this.cancelGate.promise;
       yield event(3, "run.cancelled", { reason: "Cancelled in TUI" });
+      return;
+    }
+    if (this.scenario === "plan") {
+      yield event(3, "plan.updated", {
+        plan: {
+          id: "plan-1",
+          title: "Fix value",
+          revision: 1,
+          steps: [{ id: "edit", title: "Edit value.mjs", status: "pending" }],
+        },
+      });
+      yield event(4, "plan.awaiting_approval", { planId: "plan-1", requestedMode: "manual" });
+      await this.planGate.promise;
+      yield event(5, "plan.approved", { planId: "plan-1", mode: "acceptEdits" });
+      yield event(6, "mode.changed", { mode: "acceptEdits", reason: "Plan approved" });
+      yield event(7, "run.resumed", { reason: "Plan approved" });
+      yield event(8, "message.assistant", {
+        message: { role: "assistant", content: "Plan approved and completed" },
+      });
+      yield event(9, "run.completed", {
+        summary: "Plan approved and completed",
+        verification: "not-required",
+      });
       return;
     }
     if (this.scenario === "blocked") {
@@ -284,6 +352,7 @@ class KeyboardTransport implements AgentTransport {
   release(): void {
     this.approvalGate.resolve();
     this.cancelGate.resolve();
+    this.planGate.resolve();
   }
 }
 

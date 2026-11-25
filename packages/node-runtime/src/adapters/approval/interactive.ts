@@ -7,7 +7,7 @@ export class InteractiveApproval implements ApprovalPort {
       return {
         approved: false,
         reason:
-          "Approval requires an interactive terminal; rerun with --yes for medium-risk operations",
+          "Approval requires an interactive terminal; rerun with --mode acceptEdits for workspace edits",
       };
     }
     const readline = createInterface({ input: process.stdin, output: process.stderr });

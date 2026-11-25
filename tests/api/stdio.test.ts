@@ -51,7 +51,7 @@ describe("stdio Agent API", () => {
         ]),
         assistant("Checked"),
       ],
-      { permission: "ask" },
+      { permission: "manual" },
     );
     const { runId } = await client.run.start({ task: "Check Node", cwd });
     let approvals = 0;
@@ -78,7 +78,7 @@ describe("stdio Agent API", () => {
         ]),
         assistant("Checked"),
       ],
-      { permission: "ask" },
+      { permission: "manual" },
     );
     const { runId } = await client.run.start({ task: "Check Node", cwd });
     let callId = "";
@@ -103,7 +103,7 @@ describe("stdio Agent API", () => {
           call("wait", "bash", { command: process.execPath, args: ["--version"] }),
         ]),
       ],
-      { permission: "ask" },
+      { permission: "manual" },
     );
     const { runId } = await client.run.start({ task: "Wait for approval", cwd });
     for await (const event of client.run.subscribe({ runId, afterSeq: 0 })) {

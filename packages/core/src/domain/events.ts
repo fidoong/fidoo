@@ -1,4 +1,5 @@
 import type { UserInputQuestion } from "../ports/user-input.js";
+import type { PermissionMode } from "../runtime/policy-engine.js";
 import type { AssistantMessage, ToolCall, ToolObservation, UserMessage } from "./messages.js";
 import type { TaskPlan } from "./plan.js";
 import type { VerificationEvidence } from "./verification.js";
@@ -16,7 +17,16 @@ interface EventBase<Type extends string, Payload> {
 }
 
 export type AgentEvent =
-  | EventBase<"run.started", { task: string; cwd: string }>
+  | EventBase<
+      "run.started",
+      {
+        task: string;
+        cwd: string;
+        permissionMode?: PermissionMode;
+        dontAsk?: boolean;
+        bypassPermissions?: boolean;
+      }
+    >
   | EventBase<"run.resumed", { reason: string }>
   | EventBase<"run.steered", { instructionId: string; task: string }>
   | EventBase<"message.user", { message: UserMessage; steeringId?: string }>
@@ -75,6 +85,21 @@ export type AgentEvent =
       }
     >
   | EventBase<"plan.updated", { plan: TaskPlan }>
+  | EventBase<"mode.changed", { mode: PermissionMode; reason?: string }>
+  | EventBase<"plan.awaiting_approval", { planId: string; requestedMode: PermissionMode }>
+  | EventBase<"plan.approved", { planId: string; mode: PermissionMode; feedback?: string }>
+  | EventBase<"plan.rejected", { planId: string; feedback?: string }>
+  | EventBase<"permission.review.started", { callId: string; tool: string }>
+  | EventBase<
+      "permission.review.completed",
+      {
+        callId: string;
+        action: "allow" | "ask" | "deny";
+        category: "aligned" | "uncertain" | "unsafe" | "out_of_scope";
+        reason: string;
+      }
+    >
+  | EventBase<"permission.review.failed", { callId: string; error: string }>
   | EventBase<"tool.proposed", { call: ToolCall }>
   | EventBase<
       "tool.approval_required",
@@ -136,6 +161,13 @@ export const EVENT_TYPES = [
   "model.usage",
   "context.compacted",
   "plan.updated",
+  "mode.changed",
+  "plan.awaiting_approval",
+  "plan.approved",
+  "plan.rejected",
+  "permission.review.started",
+  "permission.review.completed",
+  "permission.review.failed",
   "tool.proposed",
   "tool.approval_required",
   "tool.decided",

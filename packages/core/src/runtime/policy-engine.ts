@@ -2,12 +2,13 @@ import { isVerificationCommand } from "../domain/verification.js";
 import type { ToolDefinition, ToolRisk } from "../ports/tool.js";
 import type { ResolvedPermissionRule } from "./permission-config.js";
 
-export type PermissionMode = "ask" | "read-only" | "auto";
+export type PermissionMode = "read-only" | "manual" | "plan" | "acceptEdits" | "auto";
 
 export interface PolicyDecision {
   action: "allow" | "ask" | "deny";
   risk: ToolRisk;
   reason: string;
+  requiresReview?: boolean;
 }
 
 export class PolicyEngine {
@@ -16,13 +17,25 @@ export class PolicyEngine {
     private readonly rules: ResolvedPermissionRule[] = [],
   ) {}
 
-  evaluate(tool: ToolDefinition, input: unknown): PolicyDecision {
+  evaluate(
+    tool: ToolDefinition,
+    input: unknown,
+    mode: PermissionMode = this.mode,
+    bypassPermissions = false,
+  ): PolicyDecision {
     const risk = effectiveRisk(tool, input);
-    if (this.mode === "read-only" && tool.effect !== "read") {
+    if (mode === "read-only" && tool.effect !== "read") {
       return {
         action: "deny",
         risk,
         reason: `Read-only mode denies ${tool.effect} operations`,
+      };
+    }
+    if (mode === "plan" && tool.effect !== "read" && !isPlanReadOnlyCommand(input)) {
+      return {
+        action: "deny",
+        risk,
+        reason: "Plan mode only allows read-only exploration and planning",
       };
     }
     for (let index = this.rules.length - 1; index >= 0; index -= 1) {
@@ -36,14 +49,25 @@ export class PolicyEngine {
         };
       }
     }
+    if (bypassPermissions) {
+      return { action: "allow", risk, reason: "Bypass permissions approved an isolated action" };
+    }
+    if (mode === "plan") {
+      return { action: "allow", risk, reason: "Plan mode approved a read-only command" };
+    }
     if (risk === "low") {
       return { action: "allow", risk, reason: "Read-only low-risk operation" };
     }
-    if (this.mode === "auto" && risk === "medium") {
-      return { action: "allow", risk, reason: "Auto mode approved a medium-risk operation" };
+    if (mode === "acceptEdits" && isWorkspaceEdit(tool)) {
+      return { action: "allow", risk, reason: "Accept Edits mode approved a workspace edit" };
     }
-    if (this.mode === "auto" && risk === "high") {
-      return { action: "deny", risk, reason: "Auto mode never approves high-risk operations" };
+    if (mode === "auto") {
+      return {
+        action: "ask",
+        risk,
+        requiresReview: true,
+        reason: "Auto mode requires model review",
+      };
     }
     return {
       action: "ask",
@@ -121,6 +145,24 @@ function matchesGlob(value: string, pattern: string, pathMode: boolean): boolean
 
 function normalizePath(value: string): string {
   return value.replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+function isWorkspaceEdit(tool: ToolDefinition): boolean {
+  return tool.effect === "write" && tool.name !== "undo_file" && tool.name !== "undo_run";
+}
+
+function isPlanReadOnlyCommand(input: unknown): boolean {
+  if (!isRecord(input)) return false;
+  const command = typeof input.command === "string" ? input.command : "";
+  const args = Array.isArray(input.args)
+    ? input.args.filter((arg): arg is string => typeof arg === "string")
+    : [];
+  if (["pwd", "ls", "cat", "head", "tail", "grep", "wc", "which", "stat", "du"].includes(command)) {
+    return true;
+  }
+  return (
+    command === "git" && ["status", "diff", "log", "show", "rev-parse"].includes(args[0] ?? "")
+  );
 }
 
 function effectiveRisk(tool: ToolDefinition, input: unknown): ToolRisk {
