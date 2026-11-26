@@ -4,6 +4,7 @@ import type { ToolDefinition, ToolRisk } from "./tool.js";
 
 export interface AutoReviewInput {
   task: string;
+  originalTask?: string;
   tool: ToolDefinition;
   arguments: unknown;
   risk: ToolRisk;

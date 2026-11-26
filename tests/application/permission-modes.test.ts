@@ -1,7 +1,13 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ModelAutoReviewer, type ModelPort, PolicyEngine, ToolRegistry } from "@fidoo/core";
+import {
+  type AutoReviewInput,
+  ModelAutoReviewer,
+  type ModelPort,
+  PolicyEngine,
+  ToolRegistry,
+} from "@fidoo/core";
 import { createCodingTools, revisionOf } from "@fidoo/node-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assistant, call, FakeModel } from "../helpers/fake-model.js";
@@ -216,6 +222,65 @@ describe("agent permission modes", () => {
     const events = await store.load(state.runId);
     expect(events.filter((event) => event.type === "permission.review.started")).toHaveLength(2);
     expect(events.filter((event) => event.type === "permission.review.completed")).toHaveLength(2);
+  });
+
+  it("reviews the latest instruction instead of the original run task", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "fidoo-review-current-task-"));
+    directories.push(cwd);
+    const review = vi.fn(async (_input: AutoReviewInput) => ({
+      action: "allow" as const,
+      category: "aligned" as const,
+      reason: "Matches the current instruction",
+    }));
+    const { service } = testRuntime(
+      [
+        assistant("Capabilities summary"),
+        assistant("Inspecting", [
+          call("show", "bash", { command: "git", args: ["show", "--format=", "91cbaaf"] }),
+        ]),
+        assistant("Commit summary"),
+      ],
+      { permission: "auto", autoReview: { review } },
+    );
+    const initial = await service.start("你会啥", cwd, new AbortController().signal);
+    const completed = await service.resume(
+      initial.runId,
+      "本次提交都做了哪些优化变更",
+      new AbortController().signal,
+    );
+
+    expect(completed.status).toBe("completed");
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(review.mock.calls[0]?.[0]).toMatchObject({
+      task: "本次提交都做了哪些优化变更",
+      originalTask: "你会啥",
+    });
+  });
+
+  it("blocks repeated out-of-scope retries with actionable guidance", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "fidoo-review-retry-cap-"));
+    directories.push(cwd);
+    const review = vi.fn(async () => ({
+      action: "deny" as const,
+      category: "out_of_scope" as const,
+      reason: "Outside the current task",
+    }));
+    const { service, store } = testRuntime(
+      [
+        assistant("First", [call("one", "bash", { command: "git", args: ["show", "one"] })]),
+        assistant("Second", [call("two", "bash", { command: "git", args: ["show", "two"] })]),
+        assistant("Third", [call("three", "bash", { command: "git", args: ["show", "three"] })]),
+        assistant("Must not be used"),
+      ],
+      { permission: "auto", autoReview: { review } },
+    );
+
+    const state = await service.start("Analyze a commit", cwd, new AbortController().signal);
+    expect(state.status).toBe("blocked");
+    expect(state.error).toContain("rejected bash as out of scope 3 times");
+    expect(state.error).toContain("without a new user instruction");
+    expect(review).toHaveBeenCalledTimes(3);
+    expect((await store.load(state.runId)).at(-1)?.type).toBe("run.blocked");
   });
 
   it("blocks user input in dontAsk and allows isolated commands in bypass", async () => {

@@ -32,13 +32,16 @@ export class ModelAutoReviewer implements AutoReviewPort {
         {
           model: this.modelName,
           systemPrompt:
-            "You are a security reviewer for a coding agent. Review only the proposed tool action against the user's task and the execution boundaries. Do not call tools. Do not reveal hidden reasoning. Return only a compact JSON object with action (allow, ask, deny), category (aligned, uncertain, unsafe, out_of_scope), and a short reason. Choose ask when uncertain or when human judgment is required. Choose deny for credentials, destructive external effects, sandbox escape, or actions outside the task. Never approve outside-workspace changes.",
+            "You are a security reviewer for a coding agent. Review only the proposed tool action against the user's current task and the execution boundaries. The task field is the latest instruction; originalTask is background only and must not override it. Do not call tools. Do not reveal hidden reasoning. Return only a compact JSON object with action (allow, ask, deny), category (aligned, uncertain, unsafe, out_of_scope), and a short reason. Choose ask when uncertain or when human judgment is required. Choose deny for credentials, destructive external effects, sandbox escape, or actions outside the current task. Never approve outside-workspace changes.",
           messages: [
             {
               role: "user",
               source: "harness",
               content: JSON.stringify({
                 task: input.task,
+                ...(input.originalTask && input.originalTask !== input.task
+                  ? { originalTask: input.originalTask }
+                  : {}),
                 tool: input.tool.name,
                 arguments: input.arguments,
                 risk: input.risk,

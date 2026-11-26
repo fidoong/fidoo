@@ -108,7 +108,7 @@ allow 只代表 Fidoo 不再次询问。未启用 OS 沙箱时，获批 Bash 命
 
 Plan 完成不会直接写 run.completed，而是产生 `plan.awaiting_approval`。`plan.respond` 必须携带当前 revision，过期计划会被拒绝；批准后写入 `plan.approved` 和 `mode.changed` 并恢复原 run，拒绝则保持 plan，携带反馈继续规划。运行中通过 `mode.get/set` 读取和切换，所有变化都进入事件重放。
 
-Auto Reviewer 只接收任务、工具参数、风险和沙箱等必要信息，不能调用工具，不保存隐藏推理。审查产生 `permission.review.started/completed/failed`，Reviewer usage 计入模型用量。超时、断流和非法 JSON 默认 ask。
+Auto Reviewer 只接收当前任务、原始任务背景、工具参数、风险和沙箱等必要信息，不能调用工具，不保存隐藏推理。当前任务始终取最新用户指令，避免恢复会话后按旧任务拒绝。审查产生 `permission.review.started/completed/failed`，Reviewer usage 计入模型用量。超时、断流和非法 JSON 默认 ask；相同工具连续三次 out_of_scope 后明确 blocked，防止无限换参数重试。
 
 `--dont-ask` 将所有需要询问的操作变成拒绝；需要用户输入或计划审批时明确 blocked，不会无人值守挂起。`--dangerously-bypass-permissions` 只绕过普通提示，不能覆盖 read-only、plan 或组织 deny，且必须启用 `sandbox=required`，否则启动失败。
 

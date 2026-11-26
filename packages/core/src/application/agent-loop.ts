@@ -53,6 +53,8 @@ export interface AgentLoopOptions {
 export class AgentLoop {
   private readonly loops = new LoopDetector();
   private readonly scheduler = new ToolScheduler();
+  private readonly scopeRejections = new Map<string, number>();
+  private scopeBlockedCallId: string | undefined;
   private sequence = 0;
   private iteration = 0;
   private steeringVersion = 0;
@@ -380,6 +382,9 @@ export class AgentLoop {
         reason: policy.reason,
       });
       await this.recordError(call, policy.reason);
+      if (this.scopeBlockedCallId === call.id) {
+        await this.append("run.blocked", { reason: policy.reason });
+      }
       return;
     }
     if (policy.action === "ask") {
@@ -494,7 +499,7 @@ export class AgentLoop {
     try {
       const review = await this.options.autoReview.review(
         {
-          task: this.state.task,
+          ...reviewTask(this.state),
           tool,
           arguments: input,
           risk: policy.risk,
@@ -511,6 +516,23 @@ export class AgentLoop {
       if (review.usage) {
         await this.append("model.usage", { iteration: this.iteration, ...review.usage });
       }
+      if (review.action === "deny" && review.category === "out_of_scope") {
+        const count = (this.scopeRejections.get(tool.name) ?? 0) + 1;
+        this.scopeRejections.set(tool.name, count);
+        const guidance =
+          "Do not retry the same or an equivalent action without a new user instruction.";
+        const reason = `${review.reason} ${guidance}`;
+        if (count >= 3) {
+          this.scopeBlockedCallId = call.id;
+          return {
+            ...policy,
+            action: "deny",
+            reason: `Auto review rejected ${tool.name} as out of scope ${count} times for the current task. ${reason}`,
+          };
+        }
+        return { ...policy, action: "deny", reason };
+      }
+      this.scopeRejections.delete(tool.name);
       return { ...policy, action: review.action, reason: review.reason };
     } catch (error) {
       const message = errorMessage(error);
@@ -580,4 +602,12 @@ export class AgentLoop {
       throw new AgentError("Cancelled by user", "cancelled");
     }
   }
+}
+
+function reviewTask(state: RunState): { task: string; originalTask?: string } {
+  const latest = state.messages.findLast(
+    (message) => message.role === "user" && message.source === "user" && message.content.trim(),
+  );
+  if (!latest || latest.content === state.task) return { task: state.task };
+  return { task: latest.content, originalTask: state.task };
 }

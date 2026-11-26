@@ -1,6 +1,9 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
-import { ToolCallCard } from "../../packages/tui/src/components/conversation/tool-call-card.js";
+import {
+  ToolCallCard,
+  ToolGroupCard,
+} from "../../packages/tui/src/components/conversation/tool-call-card.js";
 import { ApprovalDialog } from "../../packages/tui/src/components/dialogs/approval-dialog.js";
 import { StatusBar } from "../../packages/tui/src/components/layout/status-bar.js";
 import { initialTuiState } from "../../packages/tui/src/runtime/store.js";
@@ -44,6 +47,24 @@ describe("TUI themed components", () => {
     );
     expect(view.lastFrame()).toContain("bash · pnpm test · success");
     expect(view.lastFrame()).not.toContain("duplicated summary");
+    view.unmount();
+  });
+
+  it("collapses older routine errors while keeping the latest rejection visible", () => {
+    const tools = ["first", "second", "third"].map((id, index) => ({
+      id,
+      seq: index + 1,
+      name: "bash",
+      arguments: "{}",
+      status: "error" as const,
+      decision: "rejected" as const,
+      summary: `${id} scope rejection`,
+      output: "permission denied",
+    }));
+    const view = render(<ToolGroupCard tools={tools} />);
+    expect(view.lastFrame()).toContain("1 earlier tool call");
+    expect(view.lastFrame()).not.toContain("first scope rejection");
+    expect(view.lastFrame()).toContain("third scope rejection");
     view.unmount();
   });
 

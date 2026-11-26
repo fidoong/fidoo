@@ -70,7 +70,7 @@ export const ToolCallCard = memo(function ToolCallCard({
 export const ToolGroupCard = memo(function ToolGroupCard({ tools }: { tools: ToolCard[] }) {
   const routine = tools.filter(
     (tool) =>
-      tool.status === "success" &&
+      (tool.status === "success" || tool.status === "error") &&
       tool.name !== "edit_file" &&
       tool.name !== "write_file" &&
       tool.name !== "delegate_task" &&
@@ -79,11 +79,12 @@ export const ToolGroupCard = memo(function ToolGroupCard({ tools }: { tools: Too
   const hiddenRoutine = routine.slice(0, -2);
   const visibleRoutine = routine.slice(-2);
   const featured = [...visibleRoutine, ...tools.filter((tool) => !routine.includes(tool))];
+  const hasErrors = hiddenRoutine.some((tool) => tool.status === "error");
   return (
     <Box flexDirection="column">
       {hiddenRoutine.length > 0 ? (
         <Text wrap="wrap">
-          <Text color={theme.success}>✓ </Text>
+          <Text color={hasErrors ? theme.error : theme.success}>{hasErrors ? "×" : "✓"} </Text>
           <Text bold>
             {hiddenRoutine.length} earlier tool {hiddenRoutine.length === 1 ? "call" : "calls"}
           </Text>

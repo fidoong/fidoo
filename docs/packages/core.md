@@ -44,7 +44,7 @@ export interface RunState {
 
 ## AgentLoop 执行实现
 
-`RunService` 创建和恢复任务，`AgentLoop.run` 逐轮执行。每一轮先处理 Steering，再构建请求并流式调用模型；有工具调用时进入调度器，无工具调用时进入完成门禁。RunState 持久化 permissionMode、dontAsk 和 bypassPermissions，PolicyEngine 按当前事件状态而不是全局可变开关决策。Auto 模式通过 AutoReviewPort 调用独立模型，审查事件和 usage 一并持久化，失败只回退 ask/deny。默认审查超时为 10 秒；超时会明确报告 `Auto reviewer timed out after 10000ms`，与空响应、非法 JSON 和外部取消分开诊断。Plan 模式完成时进入 awaiting_plan，`RunService.decidePlan` 校验 revision 后记录批准/拒绝，批准后才切换 manual、acceptEdits 或 auto 并恢复执行。
+`RunService` 创建和恢复任务，`AgentLoop.run` 逐轮执行。每一轮先处理 Steering，再构建请求并流式调用模型；有工具调用时进入调度器，无工具调用时进入完成门禁。RunState 持久化 permissionMode、dontAsk 和 bypassPermissions，PolicyEngine 按当前事件状态而不是全局可变开关决策。Auto 模式通过 AutoReviewPort 调用独立模型，审查事件和 usage 一并持久化，失败只回退 ask/deny。审查输入的 task 是最新用户指令，originalTask 仅作背景，恢复或 Steering 后不再按最初任务误判。相同工具连续三次被判定 out_of_scope 时写入 run.blocked，并明确要求新的用户指令，防止模型换参数无限重试。默认审查超时为 10 秒；超时会明确报告 `Auto reviewer timed out after 10000ms`，与空响应、非法 JSON 和外部取消分开诊断。Plan 模式完成时进入 awaiting_plan，`RunService.decidePlan` 校验 revision 后记录批准/拒绝，批准后才切换 manual、acceptEdits 或 auto 并恢复执行。
 
 ```text
 flushSteering
