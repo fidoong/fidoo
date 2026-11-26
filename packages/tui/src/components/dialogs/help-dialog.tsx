@@ -52,6 +52,8 @@ export function HelpDialog() {
         <Text>
           <Key>Ctrl+O</Key>
           <Text dimColor> output · </Text>
+          <Key>Ctrl+T</Key>
+          <Text dimColor> activity · </Text>
           <Key>Ctrl+C</Key>
           <Text dimColor> cancel / press twice to exit</Text>
         </Text>

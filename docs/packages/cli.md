@@ -68,7 +68,7 @@ process.argv
 
 ## 配置优先级与校验细节
 
-`resolveRuntimeConfig` 将显式选项交给 `resolveProviderConnection`，与 `FIDOO_*` 和已保存连接合并。模型缺失、Provider 必需 API Key 缺失都会给出具体环境变量提示。
+`resolveRuntimeConfig` 将实际提供的显式选项交给 `resolveProviderConnection`，按命令行 → `FIDOO_*` → `models.json` 保存连接 → Provider 默认值的顺序合并。CLI、独立 agent-server 和 doctor 都不会在未指定 Provider 时提前生成默认值，因此 `/setup` 保存的 Kimi Code 等连接在重启后继续生效；显式 `--provider` 仍可覆盖保存值。模型缺失、Provider 必需 API Key 缺失都会给出具体环境变量提示。
 
 额外校验包括：
 

@@ -26,6 +26,7 @@ export const ToolCallCard = memo(function ToolCallCard({
     tool.status === "error" ||
     tool.name === "edit_file" ||
     tool.name === "write_file" ||
+    tool.name === "delegate_task" ||
     tool.name === "report_blocked";
   return (
     <Box flexDirection="column" marginBottom={diff || expanded ? 1 : 0}>
@@ -37,7 +38,7 @@ export const ToolCallCard = memo(function ToolCallCard({
         ) : (
           <Text color={status.color}>{status.icon} </Text>
         )}
-        <Text bold>{tool.name}</Text>
+        <Text bold>{tool.name === "delegate_task" ? "Subagent" : tool.name}</Text>
         <Text dimColor> · </Text>
         {tool.name === "bash" ? <CommandHighlight command={args} /> : <Text dimColor>{args}</Text>}
         <Text dimColor> · </Text>
@@ -72,6 +73,7 @@ export const ToolGroupCard = memo(function ToolGroupCard({ tools }: { tools: Too
       tool.status === "success" &&
       tool.name !== "edit_file" &&
       tool.name !== "write_file" &&
+      tool.name !== "delegate_task" &&
       tool.name !== "report_blocked",
   );
   const hiddenRoutine = routine.slice(0, -2);
@@ -103,11 +105,13 @@ export function formatArguments(name: string, source: string): string {
         ? [input.command, ...(Array.isArray(input.args) ? input.args : [])]
             .filter((part) => part !== undefined)
             .join(" ")
-        : typeof input.path === "string"
-          ? input.path
-          : typeof input.pattern === "string"
-            ? String(input.pattern)
-            : source;
+        : name === "delegate_task" && typeof input.task === "string"
+          ? input.task
+          : typeof input.path === "string"
+            ? input.path
+            : typeof input.pattern === "string"
+              ? String(input.pattern)
+              : source;
     return value.length > 100 ? `${value.slice(0, 97)}...` : value;
   } catch {
     return source;

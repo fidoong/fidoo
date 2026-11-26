@@ -109,6 +109,105 @@ describe("stdio and TUI end to end", () => {
     }
   }, 30_000);
 
+  it("views a child agent and controls a real background process from Activity", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-activity-"));
+    cleanups.push(() => rm(cwd, { recursive: true, force: true }));
+    await writeFile(join(cwd, "answer.txt"), "read-only finding\n");
+    const provider = await activityProvider();
+    cleanups.push(provider.close);
+    const serverEntry = fileURLToPath(
+      new URL("../../apps/agent-server/src/index.ts", import.meta.url),
+    );
+    const connection = connectAgentServer({
+      args: [
+        "--import",
+        "tsx",
+        serverEntry,
+        "--stdio",
+        "--cwd",
+        cwd,
+        "--provider",
+        "openai",
+        "--model",
+        "test-model",
+        "--base-url",
+        provider.baseURL,
+      ],
+      env: {
+        ...process.env,
+        FIDOO_API_KEY: "test-key",
+        FIDOO_HOME: join(cwd, "agent-home"),
+      },
+    });
+    cleanups.push(connection.close);
+    cleanups.push(async () => {
+      for (const task of await connection.client.tasks.list()) {
+        if (task.status === "running") {
+          await connection.client.tasks
+            .stop({ taskId: task.taskId, runId: task.runId, confirmed: true })
+            .catch(() => undefined);
+        }
+      }
+    });
+    const controller = new AgentController(connection.client, cwd);
+    const view = render(
+      <TuiApp
+        controller={controller}
+        options={{ cwd, provider: "openai", model: "test-model" }}
+        onExit={() => undefined}
+      />,
+    );
+    cleanups.push(() => view.unmount());
+    view.stdin.write("Inspect and start a server");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Inspect and start a server"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Approval required"), {
+      timeout: 10_000,
+    });
+    expect(view.lastFrame()).toContain("Subagent");
+    view.stdin.write("y");
+    await vi.waitFor(
+      () => {
+        expect(view.lastFrame()).toContain("Approval required");
+        expect(view.lastFrame()).toContain("bash");
+      },
+      { timeout: 10_000 },
+    );
+    view.stdin.write("y");
+    await vi.waitFor(() => expect(controller.getSnapshot().phase).toBe("completed"), {
+      timeout: 15_000,
+    });
+    const runId = controller.getSnapshot().runId ?? "";
+    expect(controller.getSnapshot().subagents[0]).toMatchObject({
+      status: "completed",
+      summary: "Child finding",
+    });
+
+    view.stdin.write("/activity");
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Inspect answer.txt"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Child finding"));
+    expect(view.lastFrame()).toContain("read-only");
+    view.stdin.write("\u001b");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Agents (1)"));
+    view.stdin.write("\u001b[C");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Processes (1)"));
+    view.stdin.write("\r");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("background ready"));
+    view.stdin.write("\u001b");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Processes (1)"));
+    view.stdin.write("s");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("Stop background process?"));
+    view.stdin.write("\u001b[C");
+    await vi.waitFor(() => expect(view.lastFrame()).toContain("› Stop process"));
+    view.stdin.write("\r");
+    await vi.waitFor(async () => {
+      expect((await connection.client.tasks.list({ runId }))[0]?.status).toBe("stopped");
+    });
+    expect(provider.requests).toBe(5);
+  }, 30_000);
+
   it("restarts a crashed sidecar and reconciles a pending approval", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-recovery-"));
     cleanups.push(() => rm(cwd, { recursive: true, force: true }));
@@ -177,7 +276,7 @@ describe("stdio and TUI end to end", () => {
     );
     expect(connection.process.pid).not.toBe(firstPid);
     expect(controller.getSnapshot().runId).toBe(runId);
-    expect(controller.getSnapshot().pendingApproval).toBeUndefined();
+    expect(controller.getSnapshot().pendingApprovals).toEqual([]);
     expect(provider.requests).toBe(2);
     const trace = await connection.client.run.trace({ runId: runId ?? "" });
     expect(new Set(trace.map((event) => event.eventId)).size).toBe(trace.length);
@@ -185,6 +284,60 @@ describe("stdio and TUI end to end", () => {
     await expect(observed).resolves.toBe(1);
   }, 30_000);
 });
+
+async function activityProvider(): Promise<{
+  baseURL: string;
+  requests: number;
+  close(): Promise<void>;
+}> {
+  let requests = 0;
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      requests += 1;
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const step = requests;
+      if (step === 1) {
+        response.write(
+          toolCall("delegate", "delegate_task", { task: "Inspect answer.txt" }, "Delegating"),
+        );
+      } else if (step === 2) {
+        response.write(toolCall("read", "read_file", { path: "answer.txt" }, "Reading"));
+      } else if (step === 3) {
+        response.write(textDelta("Child finding"));
+      } else if (step === 4) {
+        response.write(
+          toolCall(
+            "background",
+            "bash",
+            {
+              command: process.execPath,
+              args: ["-e", "console.log('background ready'); setInterval(() => {}, 1000)"],
+              background: true,
+            },
+            "Starting",
+          ),
+        );
+      } else {
+        response.write(textDelta("Activity ready"));
+      }
+      response.end("data: [DONE]\n\n");
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address() as AddressInfo;
+  return {
+    baseURL: `http://127.0.0.1:${address.port}/v1`,
+    get requests() {
+      return requests;
+    },
+    async close() {
+      server.close();
+      await once(server, "close");
+    },
+  };
+}
 
 async function recoveryProvider(): Promise<{
   baseURL: string;

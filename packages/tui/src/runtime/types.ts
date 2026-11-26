@@ -17,6 +17,17 @@ export type TuiPhase =
   | "failed"
   | "cancelled";
 
+export interface SubagentCard {
+  callId: string;
+  runId: string;
+  task: string;
+  status: "running" | "completed" | "failed" | "blocked" | "cancelled";
+  summary?: string;
+  error?: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
 export interface ViewMessage {
   id: string;
   seq: number;
@@ -89,7 +100,7 @@ export interface TuiState {
   reasoningMessageId: string | undefined;
   tools: ToolCard[];
   taskPlan: ViewTaskPlan | undefined;
-  pendingApproval: PendingApproval | undefined;
+  pendingApprovals: PendingApproval[];
   pendingInput: PendingUserInput | undefined;
   changedFiles: string[];
   verificationStatus: "running" | "passed" | "failed" | "not-required" | undefined;
@@ -111,6 +122,7 @@ export interface TuiState {
   };
   steeringPending: number;
   backgroundTasks: BackgroundTask[];
+  subagents: SubagentCard[];
   lastSeq: number;
   notice: string | undefined;
   error: string | undefined;

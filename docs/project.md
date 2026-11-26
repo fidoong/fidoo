@@ -57,6 +57,8 @@ apps/agent-server ──────► api ────► core
 
 后台任务使用独立的 `task.event`，不占用 run 的序号；因此主任务完成后，开发服务器退出等通知仍然可以到达界面。
 
+TUI 通过 Ctrl+T、`/activity`、`/agents` 和 `/tasks` 打开 Activity Center。子代理利用 RunOrigin 和父级生命周期事件恢复，不混入根会话；后台进程支持详情、增量日志、当前/全部过滤与确认停止。方向键统一为上下选择、左右切换页签/按钮，Composer 草稿在弹窗往返后保留。
+
 ## 权限与安全边界
 
 权限配置依次来自内置策略、`~/.fidoo/policy.json`、项目 `fidoo.policy.json`、显式 `--policy` 和 CLI 模式。最后匹配的规则优先，但 `read-only` 是不能被规则放宽的硬边界。

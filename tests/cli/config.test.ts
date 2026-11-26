@@ -1,11 +1,20 @@
-import { homedir } from "node:os";
+import { mkdtemp, rm } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defaultServerArguments } from "@fidoo/client/stdio";
+import { writeProviderConnection } from "@fidoo/node-runtime";
+import { execa } from "execa";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveServerConfig } from "../../apps/agent-server/src/config.js";
 import { dataHome, resolveRuntimeConfig, serverArguments } from "../../apps/cli/src/config.js";
 
-afterEach(() => {
+const directories: string[] = [];
+afterEach(async () => {
   vi.unstubAllEnvs();
+  await Promise.all(
+    directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
 describe("provider configuration", () => {
@@ -72,6 +81,59 @@ describe("provider configuration", () => {
     vi.stubEnv("FIDOO_HOME", undefined);
     expect(dataHome()).toBe(join(homedir(), ".fidoo"));
   });
+
+  it("loads the saved provider after restart in CLI, server and doctor", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fidoo-saved-provider-"));
+    directories.push(root);
+    await writeProviderConnection({
+      cwd: root,
+      provider: "kimi-code",
+      model: "k3.1-pro",
+      apiKey: "test-only-key",
+      baseURL: "https://api.kimi.com/coding/v1",
+      thinking: "enabled",
+      dataHome: root,
+      readOnly: false,
+      maxIterations: 40,
+    });
+    vi.stubEnv("FIDOO_HOME", root);
+    vi.stubEnv("FIDOO_PROVIDER", undefined);
+    vi.stubEnv("FIDOO_MODEL", undefined);
+    vi.stubEnv("FIDOO_BASE_URL", undefined);
+    vi.stubEnv("FIDOO_API_KEY", undefined);
+    vi.stubEnv("KIMI_API_KEY", undefined);
+
+    const options = { cwd: ".", output: "text", maxIterations: "40" } as const;
+    expect(resolveRuntimeConfig(options)).toMatchObject({
+      provider: "kimi-code",
+      model: "k3.1-pro",
+      apiKey: "test-only-key",
+    });
+    expect(resolveServerConfig(options)).toMatchObject({
+      provider: "kimi-code",
+      model: "k3.1-pro",
+    });
+    expect(
+      resolveRuntimeConfig(
+        {
+          ...options,
+          provider: "deepseek",
+          model: "deepseek-chat",
+        },
+        true,
+      ),
+    ).toMatchObject({ provider: "deepseek", model: "deepseek-chat" });
+
+    const cliEntry = fileURLToPath(new URL("../../apps/cli/src/index.ts", import.meta.url));
+    const doctor = await execa(process.execPath, ["--import", "tsx", cliEntry, "doctor"], {
+      env: { FIDOO_HOME: root },
+    });
+    expect(JSON.parse(doctor.stdout)).toMatchObject({
+      provider: "kimi-code",
+      model: "k3.1-pro",
+      apiKeyConfigured: true,
+    });
+  }, 15_000);
 
   it("forwards an explicit permission policy to the runtime and sidecar", () => {
     vi.stubEnv("OPENAI_API_KEY", "openai-test-key");

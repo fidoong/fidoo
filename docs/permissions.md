@@ -112,6 +112,8 @@ Auto Reviewer 只接收任务、工具参数、风险和沙箱等必要信息，
 
 `--dont-ask` 将所有需要询问的操作变成拒绝；需要用户输入或计划审批时明确 blocked，不会无人值守挂起。`--dangerously-bypass-permissions` 只绕过普通提示，不能覆盖 read-only、plan 或组织 deny，且必须启用 `sandbox=required`，否则启动失败。
 
+TUI 直接停止后台进程时也必须提交所属 runId 和显式确认。服务端通过 `RunService.evaluateAction` 使用重放后的当前模式、规则和 dontAsk 求值；前端确认框不能绕过 read-only、plan 或 deny。
+
 ## 7. OS 沙箱与环境变量隔离
 
 前台 Bash、`background=true` 后台任务和 `run_required_checks` 共用 `CommandExecutor`。所有命令都使用最小环境变量：默认只继承 PATH、语言、终端、CI 等安全值，API Key、TOKEN、SECRET 和其他变量不会自动传入；HOME 与 TMPDIR 指向 `<FIDOO_HOME>/sandboxes/<runId>/` 下的独立目录；Windows 同时隔离 USERPROFILE、TMP 和 TEMP，并按大小写不敏感读取 PATH 等系统变量。

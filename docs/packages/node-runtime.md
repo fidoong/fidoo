@@ -173,6 +173,12 @@ start
 
 无 root 的 Manager 用于测试或纯内存场景，输出在内存最多保留最后 1 MiB；文件模式按行流式分页，不把整个日志一次性读入内存。
 
+直接 API 停止任务时必须提供 taskId、runId 和 `confirmed: true`。AgentApi 先校验任务归属，再通过 RunService.evaluateAction 应用当前权限；read-only、plan、dontAsk 和显式 deny 不会因 TUI 确认而失效。
+
+## 子代理适配器
+
+`RunServiceSubagent` 在启动前生成 childRunId 并触发 onStarted，再以只读 RunService 启动独立 run。`RunOrigin` 保存 parentRunId、parentCallId 和 explore 类型；子代理只注册 effect=read 的工具，不能 Bash、写入或嵌套委托。返回父级前包含状态与摘要，父级生命周期事件由 Core AgentLoop 统一追加。
+
 ## EventStore 与文件锁
 
 `FileEventStore.append` 先进入进程内 Promise 队列，再通过 `<run>.lock` 跨进程互斥。锁内重新加载现有事件，检查 eventId 唯一、seq 必须等于当前长度 + 1，然后追加一行 JSONL。
@@ -229,6 +235,7 @@ MemoryArtifactStore 提供同一接口，供 AgentLoop 和工具测试验证截�
 | `src/project-verification.ts` | `.fidoo.json` 读取、严格校验与必需检查 |
 | `src/adapters/tools/bash.ts` | 直接进程执行、流式输出、验证证据和进程组终止 |
 | `src/adapters/tasks/background-task-manager.ts` | 后台任务元数据、日志、进程组和持久化 |
+| `src/adapters/subagents/run-service-subagent.ts` | 只读子代理、childRunId 回调和 RunOrigin 持久化 |
 | `src/adapters/storage/file-event-store.ts` | JSONL 事件追加、锁、序号和恢复 |
 | `src/adapters/storage/file-artifact-store.ts` | 内容寻址的大输出 Artifact |
 | `src/adapters/models/` | 中立流到各厂商 API 的适配 |

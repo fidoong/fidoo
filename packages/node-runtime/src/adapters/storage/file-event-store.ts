@@ -129,6 +129,7 @@ export class FileEventStore implements EventStore {
         runId: started.runId,
         task: started.payload.task,
         cwd: started.payload.cwd,
+        ...(started.payload.origin ? { origin: started.payload.origin } : {}),
         status:
           terminal?.type === "run.completed"
             ? "completed"

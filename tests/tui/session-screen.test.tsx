@@ -3,7 +3,10 @@ import type { AgentTransport, ApiMethod } from "@fidoo/protocol";
 import { AgentController, type ThemePreference, TuiApp } from "@fidoo/tui";
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { commandDefinitions } from "../../packages/tui/src/commands/definitions.js";
+import {
+  commandDefinitions,
+  paletteDefinitions,
+} from "../../packages/tui/src/commands/definitions.js";
 import { publicEvent as event } from "../helpers/public-event.js";
 
 const cleanups: Array<() => void> = [];
@@ -71,6 +74,31 @@ describe("TUI keyboard flow", () => {
     await vi.waitFor(() => expect(lastFrame()).not.toContain("edit_file output"));
   });
 
+  it("shows every concurrent approval in order before completing the run", async () => {
+    const transport = new KeyboardTransport("concurrent");
+    const { controller, lastFrame, stdin } = renderSession(transport);
+    stdin.write("Fetch both");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Fetch both"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Approval required"));
+    expect(lastFrame()).toContain("1/2");
+    expect(lastFrame()).toContain("https://a.example");
+    stdin.write("y");
+    await vi.waitFor(() => expect(transport.approvals).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(controller.getSnapshot().pendingApprovals[0]?.call.id).toBe("call-b"),
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("https://b.example"));
+    expect(lastFrame()).toContain("Approval required");
+    stdin.write("y");
+    await vi.waitFor(() => expect(controller.getSnapshot().phase).toBe("completed"));
+    expect(transport.approvals.map((approval) => (approval as { callId: string }).callId)).toEqual([
+      "call-a",
+      "call-b",
+    ]);
+    expect(controller.getSnapshot().pendingApprovals).toEqual([]);
+  });
+
   it("cycles behavior mode with Shift+Tab before starting a run", async () => {
     const transport = new KeyboardTransport("approval");
     const { lastFrame, stdin } = renderSession(transport);
@@ -98,6 +126,51 @@ describe("TUI keyboard flow", () => {
       mode: "acceptEdits",
     });
     await vi.waitFor(() => expect(lastFrame()).toContain("completed"));
+  });
+
+  it("navigates background tasks and opens live output", async () => {
+    const transport = new KeyboardTransport("approval");
+    transport.backgroundTasks = [
+      {
+        taskId: "task-1",
+        runId: "run-1",
+        command: "pnpm",
+        args: ["dev"],
+        cwd: "/workspace",
+        pid: 1234,
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const { lastFrame, stdin } = renderSession(transport);
+    stdin.write("/tasks");
+    await vi.waitFor(() => expect(lastFrame()).toContain("/tasks"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Activity"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("pnpm dev"));
+    expect(lastFrame()).toContain("Processes (1)");
+    stdin.write("\u001b[C");
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Agents"));
+    stdin.write("\u001b[D");
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Processes"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("server ready"));
+    expect(lastFrame()).toContain("listening on 3000");
+    expect(lastFrame()).toContain("following");
+    stdin.write("\u001b");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Processes (1)"));
+    stdin.write("s");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Stop background process?"));
+    expect(lastFrame()).toContain("Keep running");
+    stdin.write("\u001b[C");
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Stop process"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(transport.stoppedTasks).toHaveLength(1));
+    expect(transport.stoppedTasks[0]).toMatchObject({
+      taskId: "task-1",
+      runId: "run-1",
+      confirmed: true,
+    });
   });
 
   it("cancels the active run with Ctrl+C", async () => {
@@ -154,6 +227,21 @@ describe("TUI keyboard flow", () => {
     await vi.waitFor(() => expect(lastFrame()).not.toContain("/resume <run-id>"));
   });
 
+  it("preserves a composer draft and supports left and right cursor movement", async () => {
+    const transport = new KeyboardTransport("approval");
+    const { lastFrame, stdin } = renderSession(transport);
+    stdin.write("Draft");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Draft"));
+    stdin.write("\u001b[D");
+    stdin.write("X");
+    await vi.waitFor(() => expect(lastFrame()).toContain("DrafX▌t"));
+    stdin.write("\u000b");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Command palette"));
+    stdin.write("\u001b");
+    await vi.waitFor(() => expect(lastFrame()).toContain("DrafX▌t"));
+    expect(transport.started).toBe(0);
+  });
+
   it("opens the command palette and saves a selected theme", async () => {
     const transport = new KeyboardTransport("approval");
     const saved: ThemePreference[] = [];
@@ -162,12 +250,18 @@ describe("TUI keyboard flow", () => {
     });
     stdin.write("\u000b");
     await vi.waitFor(() => expect(lastFrame()).toContain("Command palette"));
-    stdin.write("\u001b[B");
-    await vi.waitFor(() => expect(lastFrame()).toContain("› /sessions"));
-    stdin.write("\u001b[B");
-    await vi.waitFor(() => expect(lastFrame()).toContain("› /trace"));
-    stdin.write("\u001b[B");
-    await vi.waitFor(() => expect(lastFrame()).toContain("› /theme"));
+    const traceIndex = paletteDefinitions.findIndex((item) => item.name === "/trace");
+    const themeIndex = paletteDefinitions.findIndex((item) => item.name === "/theme");
+    for (let index = 1; index <= traceIndex; index += 1) {
+      stdin.write("\u001b[B");
+      const name = paletteDefinitions[index]?.name ?? "";
+      await vi.waitFor(() => expect(lastFrame()).toContain(`› ${name}`));
+    }
+    for (let index = traceIndex + 1; index <= themeIndex; index += 1) {
+      stdin.write("\u001b[B");
+      const name = paletteDefinitions[index]?.name ?? "";
+      await vi.waitFor(() => expect(lastFrame()).toContain(`› ${name}`));
+    }
     stdin.write("\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("Appearance"));
     stdin.write("\u001b[B");
@@ -216,13 +310,18 @@ class KeyboardTransport implements AgentTransport {
   readonly approvals: unknown[] = [];
   readonly startParams: Record<string, unknown>[] = [];
   readonly planResponses: Record<string, unknown>[] = [];
+  readonly stoppedTasks: unknown[] = [];
+  backgroundTasks: Array<Record<string, unknown>> = [];
   started = 0;
   cancelled = false;
   private readonly approvalGate = deferred();
+  private readonly concurrentApprovalGates = [deferred(), deferred()] as const;
   private readonly cancelGate = deferred();
   private readonly planGate = deferred();
 
-  constructor(private readonly scenario: "approval" | "cancel" | "blocked" | "plan") {}
+  constructor(
+    private readonly scenario: "approval" | "cancel" | "blocked" | "plan" | "concurrent",
+  ) {}
 
   async call(method: ApiMethod, params: unknown): Promise<unknown> {
     if (method === "run.start") {
@@ -241,6 +340,7 @@ class KeyboardTransport implements AgentTransport {
     if (method === "approval.respond") {
       this.approvals.push(params);
       this.approvalGate.resolve();
+      this.concurrentApprovalGates[this.approvals.length - 1]?.resolve();
       return { ok: true };
     }
     if (method === "run.cancel") {
@@ -248,10 +348,38 @@ class KeyboardTransport implements AgentTransport {
       this.cancelGate.resolve();
       return snapshot("cancelled");
     }
+    if (method === "task.list") {
+      const runId = (params as { runId?: string }).runId;
+      return runId
+        ? this.backgroundTasks.filter((task) => task.runId === runId)
+        : this.backgroundTasks;
+    }
+    if (method === "task.output") {
+      const input = params as { taskId: string; offset?: number; limit?: number };
+      return {
+        taskId: input.taskId,
+        offset: input.offset ?? 0,
+        limit: input.limit ?? 200,
+        totalLines: 2,
+        content: "server ready\nlistening on 3000",
+        nextOffset: undefined,
+      };
+    }
+    if (method === "task.stop") {
+      this.stoppedTasks.push(params);
+      const input = params as { taskId: string };
+      const task = this.backgroundTasks.find((item) => item.taskId === input.taskId);
+      if (task) task.status = "stopped";
+      return task;
+    }
     throw new Error(`Unexpected call: ${method}`);
   }
 
-  async *subscribe(_method: "run.subscribe", _params: unknown): AsyncIterable<unknown> {
+  async *subscribe(
+    method: "run.subscribe" | "task.subscribe",
+    _params: unknown,
+  ): AsyncIterable<unknown> {
+    if (method === "task.subscribe") return;
     yield event(1, "run.started", {
       task: "Keyboard task",
       cwd: "/workspace",
@@ -260,6 +388,64 @@ class KeyboardTransport implements AgentTransport {
     yield event(2, "message.user", {
       message: { role: "user", source: "user", content: "Keyboard task" },
     });
+    if (this.scenario === "concurrent") {
+      yield event(3, "tool.proposed", {
+        call: { id: "call-a", name: "web_fetch", arguments: '{"url":"https://a.example"}' },
+      });
+      yield event(4, "tool.proposed", {
+        call: { id: "call-b", name: "web_fetch", arguments: '{"url":"https://b.example"}' },
+      });
+      yield event(5, "tool.approval_required", {
+        callId: "call-a",
+        risk: "medium",
+        reason: "Review A",
+      });
+      yield event(6, "tool.approval_required", {
+        callId: "call-b",
+        risk: "medium",
+        reason: "Review B",
+      });
+      await this.concurrentApprovalGates[0].promise;
+      const first = (this.approvals[0] as { callId: string }).callId;
+      yield event(7, "tool.decided", {
+        callId: first,
+        decision: "approved",
+        reason: "Approved in TUI",
+      });
+      yield event(8, "tool.started", { callId: first });
+      yield event(9, "tool.result", {
+        result: {
+          callId: first,
+          name: "web_fetch",
+          status: "success",
+          content: "First complete",
+        },
+      });
+      await this.concurrentApprovalGates[1].promise;
+      const second = (this.approvals[1] as { callId: string }).callId;
+      yield event(10, "tool.decided", {
+        callId: second,
+        decision: "approved",
+        reason: "Approved in TUI",
+      });
+      yield event(11, "tool.started", { callId: second });
+      yield event(12, "tool.result", {
+        result: {
+          callId: second,
+          name: "web_fetch",
+          status: "success",
+          content: "Second complete",
+        },
+      });
+      yield event(13, "message.assistant", {
+        message: { role: "assistant", content: "Both approved" },
+      });
+      yield event(14, "run.completed", {
+        summary: "Both approved",
+        verification: "not-required",
+      });
+      return;
+    }
     if (this.scenario === "cancel") {
       await this.cancelGate.promise;
       yield event(3, "run.cancelled", { reason: "Cancelled in TUI" });
@@ -351,6 +537,7 @@ class KeyboardTransport implements AgentTransport {
 
   release(): void {
     this.approvalGate.resolve();
+    for (const gate of this.concurrentApprovalGates) gate.resolve();
     this.cancelGate.resolve();
     this.planGate.resolve();
   }

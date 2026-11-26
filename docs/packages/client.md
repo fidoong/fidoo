@@ -37,7 +37,7 @@ for await (const event of client.run.subscribe({
 | `approval` | 审批或拒绝指定调用 |
 | `artifacts` | 按 ID、offset、limit 读取大输出 |
 | `settings` | 获取设置、更新连接、发现模型 |
-| `tasks` | 查询后台任务、读取输出、停止和订阅 |
+| `tasks` | 查询后台任务、读取输出、确认停止和订阅；停止需 taskId、runId、confirmed |
 
 每个响应都经过 Protocol 中的 Zod Schema 解析。服务端返回结构不兼容时，Client 立即失败，而不是把未知对象交给界面产生隐蔽错误。
 
@@ -102,7 +102,7 @@ ReconnectingStdioTransport 在调用开始时生成一次 `client-N`，后续最
 
 ## 后台任务订阅差异
 
-`task.subscribe` 没有 run 序号和快照恢复。断线后只重新建立全局订阅，不重放已经错过的通知；任务真实状态仍可通过 `task.list` 和 `task.output` 查询。界面不能把临时通知当作任务事实源。
+`task.subscribe` 没有 run 序号和快照恢复。断线后只重新建立全局订阅，不重放已经错过的通知；任务真实状态仍可通过 `task.list` 和 `task.output` 查询。界面不能把临时通知当作任务事实源。TaskClient 使用显式迭代器包装响应校验，并把 return/throw 转发给底层 transport，确保 Activity 重连或卸载能真正取消旧订阅。
 
 ## 连接状态与资源释放
 

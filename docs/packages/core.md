@@ -44,7 +44,7 @@ export interface RunState {
 
 ## AgentLoop 执行实现
 
-`RunService` 创建和恢复任务，`AgentLoop.run` 逐轮执行。每一轮先处理 Steering，再构建请求并流式调用模型；有工具调用时进入调度器，无工具调用时进入完成门禁。RunState 持久化 permissionMode、dontAsk 和 bypassPermissions，PolicyEngine 按当前事件状态而不是全局可变开关决策。Auto 模式通过 AutoReviewPort 调用独立模型，审查事件和 usage 一并持久化，失败只回退 ask/deny。Plan 模式完成时进入 awaiting_plan，`RunService.decidePlan` 校验 revision 后记录批准/拒绝，批准后才切换 manual、acceptEdits 或 auto 并恢复执行。
+`RunService` 创建和恢复任务，`AgentLoop.run` 逐轮执行。每一轮先处理 Steering，再构建请求并流式调用模型；有工具调用时进入调度器，无工具调用时进入完成门禁。RunState 持久化 permissionMode、dontAsk 和 bypassPermissions，PolicyEngine 按当前事件状态而不是全局可变开关决策。Auto 模式通过 AutoReviewPort 调用独立模型，审查事件和 usage 一并持久化，失败只回退 ask/deny。默认审查超时为 10 秒；超时会明确报告 `Auto reviewer timed out after 10000ms`，与空响应、非法 JSON 和外部取消分开诊断。Plan 模式完成时进入 awaiting_plan，`RunService.decidePlan` 校验 revision 后记录批准/拒绝，批准后才切换 manual、acceptEdits 或 auto 并恢复执行。
 
 ```text
 flushSteering
@@ -58,6 +58,10 @@ flushSteering
 ```
 
 `appendChain` 串行化事件追加。`steer()` 与正常循环共享这条写入链，避免并发产生重复 `seq`。Steering 先写 `run.steered`，对应用户消息等到当前 assistant 与工具结果闭合后再写入，保持消息单元完整。
+
+子代理仍是同步、只读的独立 Run。`run.started.origin` 持久化 kind、parentRunId、parentCallId 和 explore 类型；父 run 通过 ToolContext 回调写入 `subagent.started/finished`，其中只包含 childRunId、父 callId、状态和摘要。子代理消息与工具事件仍位于 child run，不复制进父上下文。
+
+`RunService.evaluateAction` 为直接 UI 操作提供与 AgentLoop 相同的 PolicyEngine 求值，使用重放后的当前 permissionMode、bypassPermissions 和 dontAsk，而不是读取客户端本地状态。后台任务停止通过该入口执行权限校验。
 
 `RunService.reconcileInterruptedCalls` 为上次进程退出前未闭合的调用补充错误结果，明确“没有自动重放”。模型恢复后必须先检查真实工作区，再决定下一步。
 
@@ -117,11 +121,12 @@ interface VerificationEvidence {
 | --- | --- | --- |
 | `domain/events.ts` | `createEvent`、`EVENT_TYPES` | 定义全部内部事件联合类型；创建事件时自动附带 `schemaVersion` |
 | `domain/run-state.ts` | `emptyRunState`、`reduceEvent`、`replayRun` | 建立空状态、逐事件归约、校验连续序号并重建运行 |
+| `domain/run-origin.ts` | `RunOrigin` | 持久化根任务或只读子代理的父子来源 |
 | `domain/messages.ts` | `Message`、`ToolObservation` | 定义 Provider 中立消息和工具观察；验证证据引用独立结构 |
 | `domain/plan.ts` | `TaskPlan`、`TaskPlanUpdate` | 稳定计划 id、revision、步骤状态和完成证据 |
 | `domain/errors.ts` | `AgentError`、`errorMessage` | 统一配置、Provider、预算、工具、存储等错误类别与可恢复标记 |
 | `domain/verification.ts` | `classifyVerification`、`verificationMatchesCheck` | 命令识别、失败分类、required check 精确匹配和路径筛选 |
-| `application/run-service.ts` | `start`、`resume`、`cancel` | 校验工作区、写初始事件、管理活跃 Loop、恢复中断调用 |
+| `application/run-service.ts` | `start`、`resume`、`evaluateAction`、`cancel` | 校验工作区、写初始事件、管理活跃 Loop、直接操作权限与中断对账 |
 | `application/agent-loop.ts` | `run`、`steer`、`nextAssistant`、`complete` | 模型轮次、工具批次、Steering、验证门禁和终态 |
 | `context/context-builder.ts` | `buildModelRequest` | 工具 Schema 转换、Token 估算、完整消息单元裁剪和压缩事件 |
 | `context/project-instructions.ts` | `loadProjectInstructions` | 读取项目 `AGENTS.md`，缺失时不注入空指令 |
@@ -140,7 +145,8 @@ interface VerificationEvidence {
 
 | 事件 | 对 RunState 的修改 |
 | --- | --- |
-| `run.started` | 保存原始 task 与规范化 cwd |
+| `run.started` | 保存原始 task、规范化 cwd 和可选 RunOrigin |
+| `subagent.started/finished` | 不改变父 run 终态；为客户端保存可恢复的子代理关系与摘要 |
 | `run.resumed` | 状态回到 running，清除旧 finalSummary 和 error |
 | `message.user` | 追加用户消息；若有 steeringId，则从待处理 Steering 队列删除 |
 | `message.assistant` | 追加完整助手消息，流式 delta 不在此处存储 |

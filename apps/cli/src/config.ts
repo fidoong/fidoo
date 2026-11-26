@@ -7,7 +7,7 @@ import type {
   SandboxMode,
   ThinkingMode,
 } from "@fidoo/node-runtime";
-import { parseProviderKind, resolveProviderConnection } from "@fidoo/node-runtime";
+import { resolveProviderConnection } from "@fidoo/node-runtime";
 import { type PermissionMode, providerDefinition } from "@fidoo/protocol";
 
 export type OutputFormat = "text" | "json" | "jsonl";
@@ -40,10 +40,9 @@ export function resolveRuntimeConfig(
   options: GlobalOptions,
   allowUnconfigured = false,
 ): RuntimeConfig {
-  const provider = options.provider ?? parseProvider(process.env.FIDOO_PROVIDER);
   const connection = resolveProviderConnection(
     {
-      provider,
+      ...(options.provider ? { provider: options.provider } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
       ...(options.thinking ? { thinking: options.thinking } : {}),
@@ -54,11 +53,11 @@ export function resolveRuntimeConfig(
   if (!allowUnconfigured && !model) {
     throw new AgentError("Set --model or FIDOO_MODEL", "configuration");
   }
-  if (!allowUnconfigured && providerDefinition(provider).apiKeyRequired && !apiKey) {
-    const variable = providerDefinition(provider).apiKeyEnv[0] ?? "FIDOO_API_KEY";
+  if (!allowUnconfigured && providerDefinition(connection.provider).apiKeyRequired && !apiKey) {
+    const variable = providerDefinition(connection.provider).apiKeyEnv[0] ?? "FIDOO_API_KEY";
     throw new AgentError(`Set FIDOO_API_KEY or ${variable}`, "configuration");
   }
-  if (provider !== "deepseek" && (options.thinking ?? process.env.FIDOO_THINKING)) {
+  if (connection.provider !== "deepseek" && (options.thinking ?? process.env.FIDOO_THINKING)) {
     throw new AgentError("--thinking is only supported with --provider deepseek", "configuration");
   }
   if (options.readOnly && options.mode === "auto") {
@@ -103,10 +102,6 @@ export function serverArguments(config: RuntimeConfig): string[] {
     ...(config.dontAsk ? ["--dont-ask"] : []),
     ...(config.bypassPermissions ? ["--dangerously-bypass-permissions"] : []),
   ];
-}
-
-export function parseProvider(value: string | undefined): ProviderKind {
-  return parseProviderKind(value);
 }
 
 export function parseThinking(value: string | undefined): ThinkingMode {

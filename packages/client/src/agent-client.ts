@@ -156,10 +156,33 @@ class TaskClient {
     return backgroundTaskSchema.parse(await this.transport.call("task.stop", params));
   }
 
-  async *subscribe(): AsyncIterable<BackgroundTaskEvent> {
-    for await (const event of this.transport.subscribe("task.subscribe", {})) {
-      yield backgroundTaskEventSchema.parse(event);
-    }
+  subscribe(): AsyncIterable<BackgroundTaskEvent> {
+    const stream = this.transport.subscribe("task.subscribe", {});
+    return {
+      [Symbol.asyncIterator]: () => {
+        const iterator = stream[Symbol.asyncIterator]();
+        return {
+          next: async (): Promise<IteratorResult<BackgroundTaskEvent>> => {
+            const next = await iterator.next();
+            if (next.done) return { value: undefined, done: true };
+            return { value: backgroundTaskEventSchema.parse(next.value), done: false };
+          },
+          return: async (value?: unknown): Promise<IteratorResult<BackgroundTaskEvent>> => {
+            if (iterator.return) await iterator.return(value);
+            return { value, done: true };
+          },
+          throw: async (error?: unknown): Promise<IteratorResult<BackgroundTaskEvent>> => {
+            if (iterator.throw) {
+              const result = await iterator.throw(error);
+              if (result.done) return result;
+              return { value: backgroundTaskEventSchema.parse(result.value), done: false };
+            }
+            if (iterator.return) await iterator.return();
+            throw error;
+          },
+        };
+      },
+    };
   }
 }
 

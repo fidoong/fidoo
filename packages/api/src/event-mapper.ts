@@ -62,6 +62,7 @@ export function toPublicSnapshot(state: RunState): RunSnapshot {
     task: state.task,
     cwd: state.cwd,
     status: state.status,
+    ...(state.origin ? { origin: state.origin } : {}),
     permissionMode: state.permissionMode,
     dontAsk: state.dontAsk,
     bypassPermissions: state.bypassPermissions,

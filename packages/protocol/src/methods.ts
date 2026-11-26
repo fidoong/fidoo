@@ -9,6 +9,15 @@ export const workspaceValidateResultSchema = z.object({
 export type WorkspaceValidateParams = z.infer<typeof workspaceValidateParamsSchema>;
 export type WorkspaceValidateResult = z.infer<typeof workspaceValidateResultSchema>;
 
+export const runOriginSchema = z.object({
+  kind: z.enum(["root", "subagent"]),
+  parentRunId: z.string().min(1).optional(),
+  parentCallId: z.string().min(1).optional(),
+  agentType: z.literal("explore").optional(),
+  title: z.string().optional(),
+});
+export type RunOrigin = z.infer<typeof runOriginSchema>;
+
 export const runStartParamsSchema = z.object({
   task: z.string().min(1),
   cwd: z.string().min(1),
@@ -41,8 +50,10 @@ export type RunSubscribeParams = z.infer<typeof runSubscribeParamsSchema>;
 
 export const runListParamsSchema = z.object({
   limit: z.number().int().min(1).max(200).default(50),
+  parentRunId: z.string().min(1).optional(),
+  includeSubagents: z.boolean().default(false),
 });
-export type RunListParams = z.infer<typeof runListParamsSchema>;
+export type RunListParams = z.input<typeof runListParamsSchema>;
 
 export const runStatusSchema = z.enum([
   "running",
@@ -59,6 +70,7 @@ export const runSnapshotSchema = z.object({
   task: z.string(),
   cwd: z.string(),
   status: runStatusSchema,
+  origin: runOriginSchema.optional(),
   permissionMode: permissionModeSchema.optional(),
   dontAsk: z.boolean().optional(),
   bypassPermissions: z.boolean().optional(),
@@ -74,6 +86,7 @@ export const runSummarySchema = z.object({
   task: z.string(),
   cwd: z.string(),
   status: runStatusSchema,
+  origin: runOriginSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

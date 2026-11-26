@@ -2,6 +2,7 @@ import type { UserInputQuestion } from "../ports/user-input.js";
 import type { PermissionMode } from "../runtime/policy-engine.js";
 import type { AssistantMessage, ToolCall, ToolObservation, UserMessage } from "./messages.js";
 import type { TaskPlan } from "./plan.js";
+import type { RunOrigin } from "./run-origin.js";
 import type { VerificationEvidence } from "./verification.js";
 
 export const EVENT_SCHEMA_VERSION = 1 as const;
@@ -22,6 +23,7 @@ export type AgentEvent =
       {
         task: string;
         cwd: string;
+        origin?: RunOrigin;
         permissionMode?: PermissionMode;
         dontAsk?: boolean;
         bypassPermissions?: boolean;
@@ -86,6 +88,17 @@ export type AgentEvent =
     >
   | EventBase<"plan.updated", { plan: TaskPlan }>
   | EventBase<"mode.changed", { mode: PermissionMode; reason?: string }>
+  | EventBase<"subagent.started", { callId: string; childRunId: string; task: string }>
+  | EventBase<
+      "subagent.finished",
+      {
+        callId: string;
+        childRunId: string;
+        status: "completed" | "failed" | "blocked" | "cancelled";
+        summary: string;
+        error?: string;
+      }
+    >
   | EventBase<"plan.awaiting_approval", { planId: string; requestedMode: PermissionMode }>
   | EventBase<"plan.approved", { planId: string; mode: PermissionMode; feedback?: string }>
   | EventBase<"plan.rejected", { planId: string; feedback?: string }>
@@ -162,6 +175,8 @@ export const EVENT_TYPES = [
   "context.compacted",
   "plan.updated",
   "mode.changed",
+  "subagent.started",
+  "subagent.finished",
   "plan.awaiting_approval",
   "plan.approved",
   "plan.rejected",

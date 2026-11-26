@@ -250,6 +250,7 @@ TUI 包只负责主题解析与应用；CLI 负责配置文件读写，避免把
 
 ### T3：开发效率与可定制性
 
+- 已完成统一二维导航、ComposerStore 草稿/光标/多行历史，以及 Ctrl+T Activity Center。Activity 支持子代理生命周期与只读 Trace、后台进程当前/全部过滤、增量日志 follow 和带服务端权限校验的停止确认。子代理通过 RunOrigin 与父级 subagent.started/finished 恢复，不再混入根会话列表。
 - 已完成命令面板和主题持久化；后续增加键位配置、会话搜索、结构化 diff 全屏视图。
 - 可选 alternate screen、鼠标点击和复制模式。
 - 后续 IDE 复用 `client/protocol`，不共享终端专用组件或 `agent-controller`。

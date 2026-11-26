@@ -8,6 +8,7 @@ export * from "./domain/errors.js";
 export * from "./domain/events.js";
 export * from "./domain/messages.js";
 export * from "./domain/plan.js";
+export * from "./domain/run-origin.js";
 export * from "./domain/run-state.js";
 export * from "./domain/verification.js";
 export * from "./ports/approval.js";

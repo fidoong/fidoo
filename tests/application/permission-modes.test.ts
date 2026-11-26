@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ModelAutoReviewer, PolicyEngine, ToolRegistry } from "@fidoo/core";
+import { ModelAutoReviewer, type ModelPort, PolicyEngine, ToolRegistry } from "@fidoo/core";
 import { createCodingTools, revisionOf } from "@fidoo/node-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assistant, call, FakeModel } from "../helpers/fake-model.js";
@@ -154,6 +154,30 @@ describe("agent permission modes", () => {
         new AbortController().signal,
       ),
     ).rejects.toThrow("Auto reviewer returned no JSON object");
+  });
+
+  it("distinguishes reviewer timeout from invalid JSON", async () => {
+    const model: ModelPort = {
+      async *stream(_request, signal) {
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+    };
+    const reviewer = new ModelAutoReviewer(model, "fake-model", 20);
+    await expect(
+      reviewer.review(
+        {
+          task: "Run tests",
+          tool: reviewTool(),
+          arguments: {},
+          risk: "medium",
+          projectTrusted: true,
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Auto reviewer timed out after 20ms");
   });
 
   it("emits review events and allows reviewed actions", async () => {

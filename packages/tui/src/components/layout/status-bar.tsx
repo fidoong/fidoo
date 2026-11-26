@@ -1,4 +1,4 @@
-import type { PermissionMode } from "@fidoo/protocol";
+import type { BackgroundTask, PermissionMode } from "@fidoo/protocol";
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { isActivePhase } from "../../runtime/store.js";
@@ -12,14 +12,17 @@ export function StatusBar({
   provider = "agent",
   model = "not configured",
   contextLimit = 100_000,
+  backgroundTasks = state.backgroundTasks,
 }: {
   state: TuiState;
   provider?: string | undefined;
   model?: string | undefined;
   contextLimit?: number;
+  backgroundTasks?: BackgroundTask[];
 }) {
   const files = state.changedFiles.length;
-  const runningTasks = state.backgroundTasks.filter((task) => task.status === "running").length;
+  const runningTasks = backgroundTasks.filter((task) => task.status === "running").length;
+  const runningAgents = state.subagents.filter((agent) => agent.status === "running").length;
   const compact = useTerminalColumns() < 72;
   const contextPercent = Math.round((state.contextTokens / contextLimit) * 100);
   const [now, setNow] = useState(Date.now());
@@ -40,7 +43,11 @@ export function StatusBar({
           {" "}
           · {state.runId ? state.runId.slice(0, 8) : "new"} · {files}{" "}
           {files === 1 ? "file" : "files"}
+          {runningAgents > 0
+            ? ` · ${runningAgents} ${runningAgents === 1 ? "agent" : "agents"}`
+            : ""}
           {runningTasks > 0 ? ` · ${runningTasks} ${runningTasks === 1 ? "task" : "tasks"}` : ""}
+          {runningAgents > 0 || runningTasks > 0 ? " · Ctrl+T" : ""}
         </Text>
       </Text>
       <Box marginLeft={compact ? 0 : 2} marginTop={compact ? 1 : 0}>
@@ -75,7 +82,7 @@ function activityLabel(state: TuiState, now: number): string {
   } else if (state.phase === "awaiting_plan") {
     label = "plan approval required";
   } else if (state.phase === "awaiting_approval") {
-    label = "approval required";
+    label = `approval required${state.pendingApprovals.length > 1 ? ` · ${state.pendingApprovals.length} pending` : ""}`;
   } else if (state.verificationStatus === "running") {
     label = "verifying";
   } else {

@@ -18,7 +18,11 @@ export class ModelAutoReviewer implements AutoReviewPort {
   async review(input: AutoReviewInput, signal: AbortSignal): Promise<AutoReviewResult> {
     const controller = new AbortController();
     const abort = () => controller.abort();
-    const timer = setTimeout(abort, this.timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      abort();
+    }, this.timeoutMs);
     timer.unref();
     signal.addEventListener("abort", abort, { once: true });
     let content = "";
@@ -59,8 +63,16 @@ export class ModelAutoReviewer implements AutoReviewPort {
           };
         }
       }
+      if (timedOut) {
+        throw new Error(`Auto reviewer timed out after ${this.timeoutMs}ms`);
+      }
       const result = reviewSchema.parse(parseJson(content));
       return { ...result, ...(usage ? { usage } : {}) };
+    } catch (error) {
+      if (timedOut) {
+        throw new Error(`Auto reviewer timed out after ${this.timeoutMs}ms`);
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", abort);

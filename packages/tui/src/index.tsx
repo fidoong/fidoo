@@ -23,7 +23,10 @@ export function renderTui({ client, ...options }: RenderTuiOptions) {
 }
 
 export { TuiApp } from "./app.js";
+export type { ActivityState } from "./runtime/activity-controller.js";
+export { ActivityController } from "./runtime/activity-controller.js";
 export { AgentController } from "./runtime/agent-controller.js";
+export { ComposerStore } from "./runtime/composer-store.js";
 export { createPlanSteps } from "./runtime/plan.js";
 export { applyRunEvent, initialTuiState } from "./runtime/store.js";
 export type { TuiState } from "./runtime/types.js";

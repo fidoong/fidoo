@@ -95,7 +95,11 @@ export const runSnapshotSchema = z.object({
 
 `RunSnapshot` 是客户端恢复时使用的最小任务视图：`runId`、原始 `task`、规范化 `cwd`、状态、改动文件数组、是否验证、最终摘要与错误。它不包含内部 Map、完整消息历史或工具私有对象；需要历史时分别调用 `run.trace` 或订阅事件。
 
-`RunSummary` 面向会话列表，额外提供 `createdAt` 和 `updatedAt`。`ArtifactReference` 只暴露内容哈希形式的 id、名称与字节数；`ArtifactPage` 增加 offset、limit、totalLines、content 和可选 nextOffset。
+`RunSummary` 面向会话列表，额外提供 `createdAt`、`updatedAt` 和可选 `origin`。origin 区分 root 与 subagent，并可携带 parentRunId、parentCallId、agentType 和 title。`run.list` 默认只返回根会话，`parentRunId` 查询直接子代理，`includeSubagents: true` 返回完整运行列表。
+
+`task.stop` 输入要求 taskId、runId 和 `confirmed: true`，防止界面误停或跨 run 操作。`task.output` 继续使用 offset/limit/nextOffset，Activity 可以据此增量跟随日志。
+
+`ArtifactReference` 只暴露内容哈希形式的 id、名称与字节数；`ArtifactPage` 增加 offset、limit、totalLines、content 和可选 nextOffset。
 
 `ProviderSettings` 与设置更新参数位于 `providers.ts`，公共设置只包含界面需要展示的连接状态。API Key 只用于更新输入，不应作为查询结果回显。`modelContextWindow` 和 `modelContextBudget` 按 Provider/模型计算上下文窗口，默认预留 8192 个输出 token，并允许用户预算进一步收紧；未知 custom 模型保守使用 100K 窗口。
 
@@ -108,6 +112,7 @@ export const runSnapshotSchema = z.object({
 | 模型 | `model.usage` | 按 iteration 累计总输入、输出、普通输入、缓存读取和缓存写入 Token |
 | 上下文 | `context.compacted` | 展示历史压缩并恢复视图状态 |
 | 计划 | `plan.updated` | 渲染真实步骤、revision 和证据 |
+| 子代理 | `subagent.started/finished` | 在父 run 中恢复 childRunId、调用关系、状态和摘要 |
 | 工具 | `tool.proposed/approval_required/decided/started/result` | 工具卡片、审批、输出与改动 |
 | 验证 | `verification.requested/finished` | 验证状态和结构化结果 |
 | 终态 | `run.completed/failed/blocked/cancelled` | 结束订阅并恢复输入 |

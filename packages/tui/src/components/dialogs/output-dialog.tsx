@@ -11,6 +11,8 @@ export function OutputDialog({
   nextOffset,
   loading,
   error,
+  live = false,
+  follow = false,
 }: {
   title: string;
   content: string;
@@ -20,6 +22,8 @@ export function OutputDialog({
   nextOffset?: number | undefined;
   loading: boolean;
   error?: string | undefined;
+  live?: boolean;
+  follow?: boolean;
 }) {
   const lines = content ? content.split("\n") : [];
   const occurrences = new Map<string, number>();
@@ -58,7 +62,10 @@ export function OutputDialog({
         );
       })}
       <Box marginTop={1} justifyContent="space-between">
-        <Text dimColor>↑/k previous · ↓/j next · Ctrl+O/Esc close</Text>
+        <Text dimColor>
+          ↑/k previous · ↓/j next{live ? " · r refresh" : ""}
+          {live && follow ? " · following" : ""} · Ctrl+O/Esc close
+        </Text>
         <Text dimColor>{nextOffset === undefined ? "end" : "more"}</Text>
       </Box>
     </Box>

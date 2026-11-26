@@ -1,12 +1,14 @@
 import type {
   ArtifactPage,
+  BackgroundTask,
   ProviderSettings,
   PublicRunEvent,
   RunSummary,
   SettingsUpdateParams,
+  TaskOutputPage,
 } from "@fidoo/protocol";
 import { Box, Text, useApp, useInput } from "ink";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { commandDefinitions, paletteDefinitions } from "./commands/definitions.js";
 import { MessageList } from "./components/conversation/message-list.js";
 import { PlanPanel } from "./components/conversation/plan-panel.js";
@@ -26,9 +28,18 @@ import { UserInputDialog } from "./components/dialogs/user-input-dialog.js";
 import { Composer } from "./components/input/composer.js";
 import { Welcome } from "./components/layout/brand.js";
 import { StatusBar } from "./components/layout/status-bar.js";
+import { moveSelection, navigationIntent } from "./navigation/navigation.js";
 import type { AgentController } from "./runtime/agent-controller.js";
+import { ComposerStore } from "./runtime/composer-store.js";
 import { isActivePhase } from "./runtime/store.js";
-import type { PendingUserInput } from "./runtime/types.js";
+import type { PendingUserInput, SubagentCard } from "./runtime/types.js";
+import {
+  ActivityScreen,
+  type ActivityTab,
+  activitySelection,
+} from "./screens/activity/activity-screen.js";
+import { AgentTraceScreen } from "./screens/activity/agent-trace-screen.js";
+import { StopTaskDialog } from "./screens/activity/stop-task-dialog.js";
 import {
   applyTheme,
   DEFAULT_THEME,
@@ -50,7 +61,9 @@ interface OutputDialogState {
   type: "output";
   title: string;
   artifactId: string | undefined;
-  page: ArtifactPage | undefined;
+  taskId?: string;
+  follow?: boolean;
+  page: ArtifactPage | TaskOutputPage | undefined;
   content: string;
   offset: number;
   limit: number;
@@ -63,6 +76,15 @@ type DialogState =
   | { type: "trace"; events: PublicRunEvent[] }
   | { type: "commands"; selected: number }
   | { type: "mode"; selected: number }
+  | { type: "activity"; tab: ActivityTab; selected: number }
+  | {
+      type: "agent";
+      agent: SubagentCard;
+      events: PublicRunEvent[];
+      loading: boolean;
+      error?: string;
+    }
+  | { type: "task_stop"; task: BackgroundTask; selected: number }
   | { type: "plan_approval"; selected: number }
   | { type: "theme"; selected: number }
   | { type: "help" }
@@ -83,10 +105,16 @@ export function TuiApp({
 }) {
   const { exit } = useApp();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const pendingApproval = state.pendingApprovals[0];
+  const activity = useSyncExternalStore(
+    controller.activity.subscribe,
+    controller.activity.getSnapshot,
+  );
   const [planExpanded, setPlanExpanded] = useState(false);
   const [exitArmed, setExitArmed] = useState(false);
   const [commandNotice, setCommandNotice] = useState<string>();
   const [connectionSettings, setConnectionSettings] = useState<ProviderSettings>();
+  const [composerStore] = useState(() => new ComposerStore());
   const [dialog, setDialog] = useState<DialogState>();
   const [activeTheme, setActiveTheme] = useState<ThemePreference>(() => {
     const preference = options.theme ?? DEFAULT_THEME;
@@ -104,6 +132,12 @@ export function TuiApp({
     },
     [],
   );
+
+  useEffect(() => {
+    controller.activity.setRun(state.runId);
+  }, [controller, state.runId]);
+
+  useEffect(() => () => controller.activity.dispose(), [controller]);
 
   useEffect(() => {
     let mounted = true;
@@ -173,6 +207,78 @@ export function TuiApp({
       setCommandNotice(errorText(error));
     }
   };
+
+  const showActivity = (tab: ActivityTab = "agents") => {
+    setCommandNotice(undefined);
+    setDialog({ type: "activity", tab, selected: 0 });
+    void controller.activity.refresh();
+  };
+
+  const showAgent = async (agent: SubagentCard) => {
+    setDialog({ type: "agent", agent, events: [], loading: true });
+    try {
+      const events = await controller.activity.trace(agent.runId);
+      setDialog((current) =>
+        current?.type === "agent" && current.agent.runId === agent.runId
+          ? { ...current, agent, events, loading: false }
+          : current,
+      );
+    } catch (error) {
+      setDialog((current) =>
+        current?.type === "agent" && current.agent.runId === agent.runId
+          ? { ...current, loading: false, error: errorText(error) }
+          : current,
+      );
+    }
+  };
+
+  const showTaskOutput = useCallback(
+    async (task: BackgroundTask, offset?: number, follow = true) => {
+      const title = `Task ${task.taskId.slice(0, 8)} · ${task.command}`;
+      setDialog((current) => ({
+        type: "output",
+        title,
+        artifactId: undefined,
+        taskId: task.taskId,
+        follow,
+        page:
+          current?.type === "output" && current.taskId === task.taskId ? current.page : undefined,
+        content: "",
+        offset: offset ?? 0,
+        limit: 200,
+        loading: true,
+        error: undefined,
+      }));
+      try {
+        let requested = offset;
+        if (requested === undefined) {
+          const probe = await controller.activity.readOutput(task.taskId, 0, 1);
+          requested = Math.max(0, probe.totalLines - 200);
+        }
+        const page = await controller.activity.readOutput(task.taskId, requested, 200);
+        setDialog((current) =>
+          current?.type === "output" && current.taskId === task.taskId
+            ? {
+                ...current,
+                title,
+                page,
+                offset: page.offset,
+                limit: page.limit,
+                loading: false,
+                error: undefined,
+              }
+            : current,
+        );
+      } catch (error) {
+        setDialog((current) =>
+          current?.type === "output" && current.taskId === task.taskId
+            ? { ...current, loading: false, error: errorText(error) }
+            : current,
+        );
+      }
+    },
+    [controller],
+  );
 
   const showTheme = () => {
     setDialog({ type: "theme", selected: THEME_PRESET_IDS.indexOf(activeTheme.preset) });
@@ -279,12 +385,31 @@ export function TuiApp({
     if (nextOffset === currentOffset) {
       return;
     }
-    if (dialog.artifactId) {
+    if (dialog.taskId) {
+      const task = activity.tasks.find((item) => item.taskId === dialog.taskId);
+      if (task) void showTaskOutput(task, nextOffset, false);
+    } else if (dialog.artifactId) {
       void showArtifact(dialog.artifactId, nextOffset, dialog.title);
     } else {
       setDialog({ ...dialog, offset: nextOffset });
     }
   };
+
+  const outputTask =
+    dialog?.type === "output" && dialog.taskId
+      ? activity.tasks.find((task) => task.taskId === dialog.taskId)
+      : undefined;
+  const outputOffset = dialog?.type === "output" ? dialog.offset : undefined;
+  const outputNextOffset = dialog?.type === "output" ? dialog.page?.nextOffset : undefined;
+  const outputFollow = dialog?.type === "output" && dialog.follow === true;
+  const outputLoading = dialog?.type === "output" && dialog.loading;
+  useEffect(() => {
+    if (outputTask?.status !== "running" || !outputFollow || outputLoading) return;
+    const timer = setTimeout(() => {
+      void showTaskOutput(outputTask, outputNextOffset ?? outputOffset ?? 0, true);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [outputTask, outputFollow, outputLoading, outputNextOffset, outputOffset, showTaskOutput]);
 
   const toggleReasoning = () => {
     if (!state.reasoningText) {
@@ -320,6 +445,12 @@ export function TuiApp({
       controller.newSession();
     } else if (value === "/sessions") {
       void showSessions();
+    } else if (value === "/activity") {
+      showActivity();
+    } else if (value === "/agents") {
+      showActivity("agents");
+    } else if (value === "/tasks") {
+      showActivity("processes");
     } else if (value === "/trace") {
       void showTrace();
     } else if (value === "/theme") {
@@ -375,22 +506,87 @@ export function TuiApp({
       }
       return;
     }
+    if (key.ctrl && input === "t") {
+      if (dialog?.type === "activity") setDialog(undefined);
+      else showActivity();
+      return;
+    }
     if (dialog) {
+      const intent = navigationIntent(input, key);
+      const direction = dialogSelectionDirection(dialog, intent);
+      if (dialog.type === "activity") {
+        const length = dialog.tab === "agents" ? state.subagents.length : activity.tasks.length;
+        if (intent === "left" || intent === "right") {
+          setDialog({
+            type: "activity",
+            tab: dialog.tab === "agents" ? "processes" : "agents",
+            selected: 0,
+          });
+        } else if (intent === "previous" || intent === "next") {
+          setDialog({
+            ...dialog,
+            selected: activitySelection(dialog.selected, length, intent === "previous" ? -1 : 1),
+          });
+        } else if (intent === "activate") {
+          if (dialog.tab === "agents") {
+            const agent = state.subagents[dialog.selected];
+            if (agent) void showAgent(agent);
+          } else {
+            const task = activity.tasks[dialog.selected];
+            if (task) void showTaskOutput(task);
+          }
+        } else if (input === "a") {
+          controller.activity.setScope(activity.scope === "current" ? "all" : "current");
+          setDialog({ ...dialog, selected: 0 });
+        } else if (input === "s" && dialog.tab === "processes") {
+          const task = activity.tasks[dialog.selected];
+          if (task?.status === "running") setDialog({ type: "task_stop", task, selected: 0 });
+        } else if (intent === "back") {
+          setDialog(undefined);
+        }
+        return;
+      }
+      if (dialog.type === "task_stop") {
+        if (intent === "left" || intent === "right" || intent === "previous" || intent === "next") {
+          setDialog({ ...dialog, selected: dialog.selected === 0 ? 1 : 0 });
+        } else if (intent === "activate") {
+          if (dialog.selected === 0) {
+            showActivity("processes");
+          } else {
+            const task = dialog.task;
+            showActivity("processes");
+            void controller.activity
+              .stop(task)
+              .catch((error) => setCommandNotice(errorText(error)));
+          }
+        } else if (intent === "back") {
+          showActivity("processes");
+        }
+        return;
+      }
+      if (dialog.type === "agent") {
+        if (intent === "back") showActivity("agents");
+        else if (input === "r") void showAgent(dialog.agent);
+        return;
+      }
       if (dialog.type === "reasoning" && key.ctrl && input === "r") {
         setDialog(undefined);
       } else if (dialog.type === "output" && key.ctrl && input === "o") {
         setDialog(undefined);
       } else if (dialog.type === "plan_approval" && key.escape) {
         void controller.respondPlan("rejected", "manual", "Revise the plan with more detail");
+      } else if (key.escape && dialog.type === "output" && dialog.taskId) {
+        showActivity("processes");
       } else if (key.escape && dialog.type !== "user_input") {
         setDialog(undefined);
+      } else if (dialog.type === "output" && dialog.taskId && input === "r") {
+        const task = activity.tasks.find((item) => item.taskId === dialog.taskId);
+        if (task) void showTaskOutput(task, dialog.offset, true);
       } else if (dialog.type === "output" && (key.downArrow || input === "j")) {
         pageOutput(1);
       } else if (dialog.type === "output" && (key.upArrow || input === "k")) {
         pageOutput(-1);
-      } else if (key.upArrow && "selected" in dialog) {
-        setDialog({ ...dialog, selected: Math.max(0, dialog.selected - 1) });
-      } else if (key.downArrow && "selected" in dialog) {
+      } else if (direction && "selected" in dialog) {
         const length =
           dialog.type === "sessions"
             ? dialog.sessions.length
@@ -399,7 +595,7 @@ export function TuiApp({
               : dialog.type === "mode" || dialog.type === "plan_approval"
                 ? 4
                 : THEME_PRESET_IDS.length;
-        setDialog({ ...dialog, selected: Math.min(Math.max(0, length - 1), dialog.selected + 1) });
+        setDialog({ ...dialog, selected: moveSelection(dialog.selected, length, direction) });
       } else if (dialog.type === "sessions" && key.return) {
         const session = dialog.sessions[dialog.selected];
         if (session) {
@@ -439,7 +635,7 @@ export function TuiApp({
       togglePlan();
       return;
     }
-    if (state.pendingApproval) {
+    if (pendingApproval) {
       if (input === "y") {
         void controller.respond("approved");
       } else if (input === "n" || key.escape) {
@@ -452,10 +648,8 @@ export function TuiApp({
       return;
     }
     if (key.ctrl && input === "k") {
-      if (!isActivePhase(state.phase)) {
-        setCommandNotice(undefined);
-        setDialog({ type: "commands", selected: 0 });
-      }
+      setCommandNotice(undefined);
+      setDialog({ type: "commands", selected: 0 });
       return;
     }
     if (key.ctrl && input === "o") {
@@ -492,6 +686,25 @@ export function TuiApp({
           <CommandDialog selected={dialog.selected} />
         ) : dialog?.type === "mode" ? (
           <ModeDialog current={state.permissionMode} selected={dialog.selected} />
+        ) : dialog?.type === "activity" ? (
+          <ActivityScreen
+            agents={state.subagents}
+            tasks={activity.tasks}
+            tab={dialog.tab}
+            selected={dialog.selected}
+            scope={activity.scope}
+            loading={activity.loading}
+            error={activity.error}
+          />
+        ) : dialog?.type === "agent" ? (
+          <AgentTraceScreen
+            agent={dialog.agent}
+            events={dialog.events}
+            loading={dialog.loading}
+            error={dialog.error}
+          />
+        ) : dialog?.type === "task_stop" ? (
+          <StopTaskDialog task={dialog.task} selected={dialog.selected} />
         ) : dialog?.type === "plan_approval" ? (
           <PlanApprovalDialog plan={state.taskPlan} selected={dialog.selected} />
         ) : dialog?.type === "theme" ? (
@@ -515,7 +728,11 @@ export function TuiApp({
             onDiscover={(params) => controller.listModels(params)}
           />
         ) : dialog?.type === "output" ? (
-          <OutputDialog {...outputView(dialog)} />
+          <OutputDialog
+            {...outputView(dialog)}
+            live={Boolean(dialog.taskId)}
+            follow={dialog.follow ?? false}
+          />
         ) : dialog?.type === "user_input" ? (
           <UserInputDialog
             questions={dialog.input.questions}
@@ -536,14 +753,20 @@ export function TuiApp({
         {exitArmed ? <Text color={theme.warning}>Press Ctrl+C again to exit.</Text> : null}
       </Box>
       <Box>
-        {dialog ? null : state.pendingApproval ? (
-          <ApprovalDialog approval={state.pendingApproval} />
+        {dialog ? null : pendingApproval ? (
+          <ApprovalDialog approval={pendingApproval} pendingCount={state.pendingApprovals.length} />
         ) : (
-          <Composer enabled busy={isActivePhase(state.phase)} onSubmit={submit} />
+          <Composer
+            enabled
+            busy={isActivePhase(state.phase)}
+            store={composerStore}
+            onSubmit={submit}
+          />
         )}
       </Box>
       <StatusBar
         state={state}
+        backgroundTasks={activity.tasks}
         provider={connectionSettings?.provider ?? options.provider}
         model={connectionSettings?.model ?? options.model}
         contextLimit={connectionSettings?.contextLimit ?? 100_000}
@@ -589,6 +812,20 @@ function splitLines(content: string): string[] {
     lines.pop();
   }
   return lines;
+}
+
+function dialogSelectionDirection(
+  dialog: DialogState,
+  intent: ReturnType<typeof navigationIntent>,
+): -1 | 1 | undefined {
+  if (!("selected" in dialog)) return undefined;
+  if (intent === "previous") return -1;
+  if (intent === "next") return 1;
+  if (dialog.type === "mode" || dialog.type === "plan_approval" || dialog.type === "theme") {
+    if (intent === "left") return -1;
+    if (intent === "right") return 1;
+  }
+  return undefined;
 }
 
 function errorText(error: unknown): string {

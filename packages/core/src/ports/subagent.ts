@@ -1,8 +1,10 @@
 export interface SubagentRequest {
   parentRunId: string;
+  parentCallId: string;
   task: string;
   cwd: string;
   signal: AbortSignal;
+  onStarted?(runId: string): void | Promise<void>;
 }
 
 export interface SubagentResult {

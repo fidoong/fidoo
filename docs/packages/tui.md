@@ -24,7 +24,7 @@ AgentClient events
 keyboard intent → AgentClient command
 ```
 
-`AgentController` 管理任务命令、事件订阅、delta 合批、Artifact 和后台任务通知。Store 将公共事件归约为 phase、消息、工具卡片、真实计划、pendingApproval、Token 和运行中任务数。
+`AgentController` 管理任务命令、事件订阅、delta 合批和 Artifact；其子服务 `ActivityController` 独立管理后台任务过滤、日志读取、停止操作和任务订阅重连。Store 将公共事件归约为 phase、消息、工具卡片、真实计划、子代理生命周期、pendingApprovals 队列和 Token。
 
 ## 事件投影与恢复
 
@@ -56,12 +56,18 @@ keyboard intent → AgentClient command
 | Ctrl+C | 取消当前 run；空闲时按退出流程处理 |
 | Esc | 关闭弹窗；审批中等同拒绝 |
 | y / n | 批准或拒绝当前工具调用 |
-| ↑ / ↓ | 输入历史或弹窗选项 |
+| ↑ / ↓ | 输入历史、多行移动、列表选项或日志分页 |
+| ← / → | Composer 光标、Activity 页签或操作按钮 |
 | Ctrl+O | 打开输出与 Artifact 查看器 |
+| Ctrl+T | 打开 Activity Center，查看子代理和后台进程 |
 | Ctrl+K | 打开命令面板 |
 | Ctrl+R | 展开或折叠推理预览 |
 
-Slash 命令覆盖 `/new`、`/resume`、`/sessions`、`/trace`、`/theme`、`/reasoning`、`/artifact`、`/settings`、`/mode` 和 `/help`。审批通过公共 `approval.respond` 返回服务端，不在 TUI 内修改权限。
+`navigation/navigation.ts` 把方向键统一映射为 previous/next/left/right/activate/back。Activity 中上下循环选择，左右切换 Agents/Processes，Enter 查看子代理事件或任务日志，`a` 切换当前/全部会话，`s` 请求停止后台进程。停止确认默认选择 Keep running，服务端仍需校验 run 归属、显式确认和权限策略。
+
+Slash 命令覆盖 `/new`、`/resume`、`/sessions`、`/activity`、`/agents`、`/tasks`、`/trace`、`/theme`、`/reasoning`、`/artifact`、`/settings`、`/mode` 和 `/help`。审批通过公共 `approval.respond` 返回服务端，不在 TUI 内修改权限。
+
+ComposerStore 独立保存草稿、Unicode 光标、多行位置、历史和命令建议。Dialog 或审批暂时隐藏 Composer 时不会销毁草稿；Ctrl+A/E 移动到行首/行尾，Ctrl+U 清空。任务日志默认跟随运行中的任务，只对可见任务按 nextOffset 低频增量刷新，手动翻页后停止跟随，`r` 可刷新并恢复跟随。
 
 状态栏显示当前 manual、acceptEdits/EDIT、plan 或 auto。Composer 聚焦时 Shift+Tab 循环模式；`/mode` 提供带说明的选择器。Plan 到达 awaiting_plan 后自动打开审批界面，可选择 Approve & Edit、Approve & Auto、Approve & Review manually 或 Revise；所有结果均通过公共 API 和持久事件生效。
 
@@ -78,15 +84,15 @@ Controller 内部除了 TuiState，还维护 execution、generation、responding
 | 方法 | 实现细节 |
 | --- | --- |
 | `submit` | 忽略空输入和活跃阶段重复提交；已有 runId 时 resume，否则 start；从 afterSeq 开始 consume |
-| `respond` | 使用 responding 防止双击重复审批；提交 pendingApproval 的 runId + callId |
+| `respond` | 使用 responding 防止双击重复审批；提交队首审批的 runId + callId |
 | `steer` | 只允许活跃 run；调用公共 steer，不直接修改 AgentLoop |
 | `cancel` | 调用 run.cancel，由服务端中断真实执行 |
 | `newSession` | 仅终态可用；增加 generation 并恢复初始视图 |
 | `loadSession` | 并行 run.get + run.trace，逐事件重建；中断 run 先显示为可恢复 idle |
 | `readArtifact` | 强制当前 runId，按页调用公共 Artifact API |
-| `consumeTasks` | 全局任务事件到达后重新 task.list，完成时显示状态和 exitCode |
+| `activity` | ActivityController 子服务，负责任务列表、日志、停止和 Trace 查询 |
 
-generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后，旧 consume 即使稍后收到事件也会直接退出，不会写入新界面。
+generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后，旧 consume 即使稍后收到事件也会直接退出，不会写入新界面。ActivityController 使用独立 refresh/subscription generation，重连时关闭旧任务迭代器再建立新订阅；通知不是事实源，每个通知都会重新查询 task.list。
 
 连接进入 reconnecting 时清除 delta timer、正文、推理和 responseActive；连接恢复后重新刷新任务。界面通知连接状态，但不自行把 run 标为取消。
 
@@ -106,13 +112,16 @@ generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后
 | `model.started/completed/failed` | 更新 iteration、模型调用数、耗时、失败数和 active |
 | `model.usage` | 当前 contextTokens 使用最新总输入值，累计普通输入、缓存读取、缓存写入与输出；兼容旧事件缺省字段 |
 | `plan.updated` | structuredClone 完整真实计划，防止引用共享修改 |
+| `subagent.started/finished` | 按 parent callId 创建或结束 SubagentCard，保存 childRunId、摘要和错误 |
 | `tool.proposed` | 按 callId 和 seq 创建 proposed 工具卡片 |
-| `tool.approval_required` | 创建 PendingApproval，phase 进入 awaiting_approval |
-| `tool.decided` | 记录 approved/rejected，并清除匹配的 pendingApproval |
+| `tool.approval_required` | 按 callId 去重并加入 pendingApprovals，phase 进入 awaiting_approval |
+| `tool.decided` | 记录 approved/rejected，只移除匹配 callId；队列非空时继续展示下一个审批 |
 | `tool.started` | 设置 running 和 startedAt |
 | `tool.result` | 计算 durationMs，更新输出、Artifact 和 changedFiles |
 | `verification.requested/finished` | 更新 verificationStatus 与真实证据 notice |
 | 终态事件 | 清理 pendingApproval 和临时流，结束 reasoning |
+
+并发 safe 工具可能同时等待审批。TUI 以 pendingApprovals 队列保存全部请求，始终展示队首并显示 `1/N`；tool.proposed、tool.started、tool.decided 和 tool.result 统一通过 activityPhase 计算状态，只要队列非空就保持 awaiting_approval，避免后完成的审批覆盖或隐藏先到达的请求。
 
 `run.completed` 不再把 finalSummary 当作新正文重复追加，避免同一回答出现两次。
 
@@ -143,9 +152,13 @@ generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后
 | `components/conversation/tool-call-card.tsx` | 参数摘要、运行状态、耗时、输出尾部、Artifact 与改动 |
 | `components/conversation/plan-panel.tsx` | 真实 TaskPlan 状态、当前说明和完成证据 |
 | `components/conversation/reasoning-panel.tsx` | 最近 3 行预览、展开后 24 行、状态和耗时 |
-| `components/input/composer.tsx` | 草稿、历史、多行、Slash 建议、Tab 补全和提交 |
+| `components/input/composer.tsx` | ComposerStore 驱动的光标、多行、Slash 建议、Tab 补全和提交 |
+| `runtime/composer-store.ts` | 独立保存草稿、历史、光标和换行位置，Dialog 往返不丢输入 |
+| `navigation/navigation.ts` | 统一方向键意图、循环选中和可见窗口 |
+| `runtime/activity-controller.ts` | 当前/全部任务过滤、日志分页、停止、重连和资源释放 |
+| `screens/activity/` | Activity 双页签、子代理 Trace、任务详情、日志入口和停止确认 |
 | `components/dialogs/approval-dialog.tsx` | 风险、命令、原因和 y/n/Esc 操作提示 |
-| `components/dialogs/output-dialog.tsx` | 短输出本地分页，大输出按 Artifact API 加载 |
+| `components/dialogs/output-dialog.tsx` | 短输出、Artifact 与后台任务日志分页；运行任务支持 follow |
 | `components/dialogs/sessions-dialog.tsx` | 会话列表、选择和恢复 |
 | `components/dialogs/settings-dialog.tsx` | Provider 连接、模型发现、校验和保存 |
 | `components/dialogs/user-input-dialog.tsx` | 多题单选、多选、自由输入、答案校验和提交状态 |
@@ -168,7 +181,9 @@ generation 用于隔离旧请求和旧订阅。新会话或恢复另一会话后
 
 | 文件 | 实现内容 |
 | --- | --- |
-| `src/runtime/agent-controller.ts` | 客户端命令、delta 合批、恢复和任务通知 |
+| `src/runtime/agent-controller.ts` | 客户端命令、delta 合批、恢复和 Activity 子服务 |
+| `src/runtime/activity-controller.ts` | 后台任务状态、日志、权限化停止和订阅恢复 |
+| `src/runtime/composer-store.ts` | 草稿、历史、光标与多行导航 |
 | `src/runtime/store.ts` | 公共事件到终端视图状态的投影 |
 | `src/runtime/timeline.ts` | 按事件顺序构造可追加历史块 |
 | `src/components/conversation/markdown.tsx` | 终端 Markdown token 渲染 |

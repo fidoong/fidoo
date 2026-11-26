@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { AgentError } from "../domain/errors.js";
 import type { AgentEvent, EventPayload, EventType } from "../domain/events.js";
 import { createEvent } from "../domain/events.js";
+import type { RunOrigin } from "../domain/run-origin.js";
 import type { RunState } from "../domain/run-state.js";
 import { replayRun } from "../domain/run-state.js";
 import type { EventStore } from "../ports/event-store.js";
+import type { ToolDefinition } from "../ports/tool.js";
 import type { WorkspacePort } from "../ports/workspace.js";
-import type { PermissionMode } from "../runtime/policy-engine.js";
+import type { PermissionMode, PolicyDecision } from "../runtime/policy-engine.js";
 import type { AgentLoopOptions } from "./agent-loop.js";
 import { AgentLoop } from "./agent-loop.js";
 
@@ -26,6 +28,7 @@ export class RunService {
     signal: AbortSignal,
     requestedRunId?: string,
     permissionMode?: PermissionMode,
+    origin?: RunOrigin,
   ): Promise<RunState> {
     const root = await this.options.workspace.assertDirectory(cwd);
     const runId = requestedRunId ?? randomUUID();
@@ -33,6 +36,7 @@ export class RunService {
     await this.append(events, runId, "run.started", {
       task,
       cwd: root,
+      ...(origin ? { origin } : {}),
       permissionMode:
         this.options.permissionMode === "read-only"
           ? "read-only"
@@ -157,6 +161,24 @@ export class RunService {
         this.activeLoops.delete(runId);
       }
     }
+  }
+
+  async evaluateAction(
+    runId: string,
+    tool: ToolDefinition,
+    input: unknown,
+  ): Promise<PolicyDecision> {
+    const state = replayRun(runId, await this.options.store.load(runId));
+    const decision = this.options.policy.evaluate(
+      tool,
+      input,
+      state.permissionMode,
+      state.bypassPermissions,
+    );
+    if (state.dontAsk && decision.action === "ask") {
+      return { ...decision, action: "deny", reason: `dontAsk denied: ${decision.reason}` };
+    }
+    return decision;
   }
 
   async cancel(runId: string): Promise<RunState> {

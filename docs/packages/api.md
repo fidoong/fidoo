@@ -88,12 +88,13 @@ subscribe + buffer
 | `run.steer` | 要求对应 active controller → RunService.steer | 写入待处理指导，下一安全边界生效 |
 | `run.cancel` | run 队列 → AbortController.abort → 执行 Promise | 返回取消后的公共快照 |
 | `run.get` | EventStore.load → replayRun | 返回最新公共快照，不启动执行 |
-| `run.list` | EventStore.list | 按公共 Summary 映射会话 |
+| `run.list` | EventStore.list → origin 过滤 | 默认只列根会话，支持 parentRunId 和 includeSubagents |
 | `run.trace` | EventStore.load | 返回映射后的公共持久事件 |
 | `approval.respond` | 参数 Schema → 幂等/队列 → ApprovalBroker.respond | 只解析指定 pending 调用 |
 | `input.respond` | 参数 Schema → 幂等/队列 → UserInputBroker.respond | 校验问题答案、选项与多选约束，闭合 request_user_input |
 | `artifact.read` | ArtifactStore.read | 按受限 id 和分页参数读取 |
-| `task.list/output/stop` | AgentTaskPort | 查询、分页读取或停止真实进程组 |
+| `task.list/output` | AgentTaskPort | 查询或分页读取后台任务输出 |
+| `task.stop` | taskId + runId + confirmed → 归属校验 → RunService.evaluateAction | 应用当前权限后停止真实进程组；非运行任务幂等返回 |
 | `settings.get/update/models` | AgentSettingsPort | 读取、替换 RunService 工厂或发现模型 |
 
 `settings.update` 成功后替换 `runService` 字段，新任务使用新连接；已开始任务仍由原执行实例完成，避免中途改变模型上下文语义。

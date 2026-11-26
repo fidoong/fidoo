@@ -9,6 +9,9 @@ export interface CommandDefinition {
 export const commandDefinitions: CommandDefinition[] = [
   { name: "/new", description: "Start a clean session" },
   { name: "/sessions", description: "Browse and restore saved runs" },
+  { name: "/activity", description: "Inspect subagents and background processes", duringRun: true },
+  { name: "/agents", description: "Inspect child agents", duringRun: true },
+  { name: "/tasks", description: "Inspect background processes", duringRun: true },
   { name: "/trace", description: "Inspect canonical run events", duringRun: true },
   { name: "/theme", description: "Choose and save the interface theme", duringRun: true },
   { name: "/setup", description: "Run the guided model setup" },

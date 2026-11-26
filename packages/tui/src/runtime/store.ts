@@ -29,7 +29,7 @@ export function initialTuiState(): TuiState {
     reasoningMessageId: undefined,
     tools: [],
     taskPlan: undefined,
-    pendingApproval: undefined,
+    pendingApprovals: [],
     pendingInput: undefined,
     changedFiles: [],
     verificationStatus: undefined,
@@ -51,6 +51,7 @@ export function initialTuiState(): TuiState {
     },
     steeringPending: 0,
     backgroundTasks: [],
+    subagents: [],
     lastSeq: 0,
     notice: undefined,
     error: undefined,
@@ -89,7 +90,7 @@ export function markControllerError(state: TuiState, error: string): TuiState {
     ...state,
     phase: "failed",
     error,
-    pendingApproval: undefined,
+    pendingApprovals: [],
     pendingInput: undefined,
   });
 }
@@ -326,6 +327,38 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         permissionMode: event.payload.mode as typeof state.permissionMode,
         notice: `Mode changed · ${String(event.payload.mode)}`,
       };
+    case "subagent.started": {
+      const agent = {
+        callId: String(event.payload.callId),
+        runId: String(event.payload.childRunId),
+        task: String(event.payload.task),
+        status: "running" as const,
+        startedAt: event.timestamp,
+      };
+      return {
+        ...state,
+        subagents: [...state.subagents.filter((item) => item.callId !== agent.callId), agent],
+        notice: `Subagent started · ${agent.task}`,
+      };
+    }
+    case "subagent.finished": {
+      const callId = String(event.payload.callId);
+      return {
+        ...state,
+        subagents: state.subagents.map((agent) =>
+          agent.callId === callId
+            ? {
+                ...agent,
+                status: event.payload.status as typeof agent.status,
+                summary: String(event.payload.summary ?? ""),
+                endedAt: event.timestamp,
+                ...(event.payload.error ? { error: String(event.payload.error) } : {}),
+              }
+            : agent,
+        ),
+        notice: `Subagent ${String(event.payload.status)} · ${String(event.payload.summary ?? "")}`,
+      };
+    }
     case "plan.awaiting_approval":
       return {
         ...state,
@@ -368,7 +401,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
       const call = toolCall(event.payload.call);
       return {
         ...state,
-        phase: "running",
+        phase: activityPhase(state),
         tools: [
           ...state.tools,
           {
@@ -394,23 +427,32 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         risk: approvalRisk(event.payload.risk),
         reason: String(event.payload.reason),
       };
-      return { ...state, phase: "awaiting_approval", pendingApproval };
+      const pendingApprovals = state.pendingApprovals.some(
+        (approval) => approval.call.id === callId,
+      )
+        ? state.pendingApprovals.map((approval) =>
+            approval.call.id === callId ? pendingApproval : approval,
+          )
+        : [...state.pendingApprovals, pendingApproval];
+      return { ...state, phase: "awaiting_approval", pendingApprovals };
     }
     case "tool.decided": {
       const callId = String(event.payload.callId);
       const decision = event.payload.decision === "approved" ? "approved" : "rejected";
+      const pendingApprovals = state.pendingApprovals.filter(
+        (approval) => approval.call.id !== callId,
+      );
       return {
         ...state,
-        phase: "running",
-        pendingApproval:
-          state.pendingApproval?.call.id === callId ? undefined : state.pendingApproval,
+        phase: activityPhase({ ...state, pendingApprovals }),
+        pendingApprovals,
         tools: updateTool(state.tools, callId, { decision }),
       };
     }
     case "tool.started":
       return {
         ...state,
-        phase: "running",
+        phase: activityPhase(state),
         tools: updateTool(state.tools, String(event.payload.callId), {
           status: "running",
           startedAt: Date.parse(event.timestamp),
@@ -439,16 +481,16 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
       const durationMs = startedAt
         ? Math.max(0, Date.parse(event.timestamp) - startedAt)
         : undefined;
+      const pendingInput =
+        state.pendingInput?.callId === result.callId ? undefined : state.pendingInput;
+      const pendingApprovals = state.pendingApprovals.filter(
+        (approval) => approval.call.id !== result.callId,
+      );
       return {
         ...state,
-        phase:
-          state.pendingApproval?.call.id === result.callId ||
-          state.pendingInput?.callId === result.callId
-            ? "running"
-            : state.phase,
-        pendingInput: state.pendingInput?.callId === result.callId ? undefined : state.pendingInput,
-        pendingApproval:
-          state.pendingApproval?.call.id === result.callId ? undefined : state.pendingApproval,
+        phase: activityPhase({ ...state, pendingApprovals, pendingInput }),
+        pendingInput,
+        pendingApprovals,
         tools: updateTool(state.tools, result.callId, {
           seq: event.seq,
           name: result.name,
@@ -480,7 +522,7 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
         phase: "completed",
         streamingText: "",
         streamingBlocksStarted: false,
-        pendingApproval: undefined,
+        pendingApprovals: [],
         pendingInput: undefined,
         verificationStatus:
           state.verificationStatus ??
@@ -497,6 +539,15 @@ export function applyRunEvent(current: TuiState, event: PublicRunEvent): TuiStat
   }
 }
 
+function activityPhase(
+  state: Pick<TuiState, "pendingApprovals" | "pendingInput" | "pendingPlan">,
+): TuiState["phase"] {
+  if (state.pendingPlan) return "awaiting_plan";
+  if (state.pendingInput) return "awaiting_input";
+  if (state.pendingApprovals.length > 0) return "awaiting_approval";
+  return "running";
+}
+
 function terminal(
   state: TuiState,
   phase: "blocked" | "failed" | "cancelled",
@@ -508,7 +559,7 @@ function terminal(
     error,
     streamingText: "",
     streamingBlocksStarted: false,
-    pendingApproval: undefined,
+    pendingApprovals: [],
     pendingInput: undefined,
   });
 }

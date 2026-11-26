@@ -7,7 +7,7 @@ import type {
   SandboxMode,
   ThinkingMode,
 } from "@fidoo/node-runtime";
-import { parseProviderKind, resolveProviderConnection } from "@fidoo/node-runtime";
+import { resolveProviderConnection } from "@fidoo/node-runtime";
 import type { PermissionMode } from "@fidoo/protocol";
 
 export interface ServerOptions {
@@ -28,10 +28,9 @@ export interface ServerOptions {
 
 export function resolveServerConfig(options: ServerOptions): NodeRuntimeConfig {
   const dataHome = process.env.FIDOO_HOME ?? join(homedir(), ".fidoo");
-  const provider = options.provider ?? parseProvider(process.env.FIDOO_PROVIDER);
   const connection = resolveProviderConnection(
     {
-      provider,
+      ...(options.provider ? { provider: options.provider } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
       ...(options.thinking ? { thinking: options.thinking } : {}),
@@ -39,7 +38,7 @@ export function resolveServerConfig(options: ServerOptions): NodeRuntimeConfig {
     dataHome,
   );
   const thinking = connection.thinking;
-  if (provider !== "deepseek" && (options.thinking ?? process.env.FIDOO_THINKING)) {
+  if (connection.provider !== "deepseek" && (options.thinking ?? process.env.FIDOO_THINKING)) {
     throw new AgentError("--thinking is only supported with --provider deepseek", "configuration");
   }
   if (options.readOnly && options.mode === "auto") {
@@ -62,8 +61,4 @@ export function resolveServerConfig(options: ServerOptions): NodeRuntimeConfig {
     ...(options.mode ? { mode: options.mode } : {}),
     maxIterations,
   };
-}
-
-function parseProvider(value: string | undefined): ProviderKind {
-  return parseProviderKind(value);
 }

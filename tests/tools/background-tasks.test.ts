@@ -109,7 +109,10 @@ describe("background tasks", () => {
     });
 
     expect((await started).done).toBe(false);
-    await client.tasks.stop({ taskId });
+    await expect(
+      client.tasks.stop({ taskId, runId: "another-run", confirmed: true }),
+    ).rejects.toThrow("not owned");
+    await client.tasks.stop({ taskId, runId, confirmed: true });
     const finished = await iterator.next();
     expect(finished.done).toBe(false);
     expect(finished.value).toMatchObject({
@@ -117,6 +120,53 @@ describe("background tasks", () => {
       task: { taskId, status: "stopped" },
     });
     await iterator.return?.();
+  });
+
+  it("denies direct task stopping in read-only mode", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-tasks-"));
+    directories.push(root);
+    const { client, tasks } = testApi([assistant("Done")], { permission: "read-only" });
+    managers.push(tasks);
+    const { runId } = await client.run.start({ task: "Read only", cwd: root });
+    for await (const event of client.run.subscribe({ runId, afterSeq: 0 })) {
+      expect(event.runId).toBe(runId);
+    }
+    const task = await tasks.start({
+      runId,
+      command: process.execPath,
+      args: ["-e", "setInterval(() => {}, 1000)"],
+      cwd: root,
+    });
+
+    await expect(
+      client.tasks.stop({ taskId: task.taskId, runId, confirmed: true }),
+    ).rejects.toThrow("Read-only mode denies execute operations");
+    expect((await tasks.get(task.taskId)).status).toBe("running");
+  });
+
+  it("denies direct task stopping when dontAsk would require approval", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-tasks-"));
+    directories.push(root);
+    const { client, tasks } = testApi([assistant("Done")], {
+      permission: "manual",
+      dontAsk: true,
+    });
+    managers.push(tasks);
+    const { runId } = await client.run.start({ task: "No prompts", cwd: root });
+    for await (const event of client.run.subscribe({ runId, afterSeq: 0 })) {
+      expect(event.runId).toBe(runId);
+    }
+    const task = await tasks.start({
+      runId,
+      command: process.execPath,
+      args: ["-e", "setInterval(() => {}, 1000)"],
+      cwd: root,
+    });
+
+    await expect(
+      client.tasks.stop({ taskId: task.taskId, runId, confirmed: true }),
+    ).rejects.toThrow("dontAsk denied");
+    expect((await tasks.get(task.taskId)).status).toBe("running");
   });
 });
 

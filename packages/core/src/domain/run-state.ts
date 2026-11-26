@@ -2,6 +2,7 @@ import type { PermissionMode } from "../runtime/policy-engine.js";
 import type { AgentEvent } from "./events.js";
 import type { Message, ToolCall } from "./messages.js";
 import type { TaskPlan } from "./plan.js";
+import type { RunOrigin } from "./run-origin.js";
 import type { RequiredCheck, VerificationEvidence } from "./verification.js";
 import {
   selectRequiredChecks,
@@ -33,6 +34,7 @@ export interface RunState {
   task: string;
   cwd: string;
   status: RunStatus;
+  origin?: RunOrigin;
   permissionMode: PermissionMode;
   dontAsk: boolean;
   bypassPermissions: boolean;
@@ -84,6 +86,7 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
     case "run.started":
       state.task = event.payload.task;
       state.cwd = event.payload.cwd;
+      if (event.payload.origin) state.origin = event.payload.origin;
       state.permissionMode = event.payload.permissionMode ?? "manual";
       state.dontAsk = event.payload.dontAsk ?? false;
       state.bypassPermissions = event.payload.bypassPermissions ?? false;
@@ -195,6 +198,8 @@ export function reduceEvent(state: RunState, event: AgentEvent): void {
     case "permission.review.started":
     case "permission.review.completed":
     case "permission.review.failed":
+    case "subagent.started":
+    case "subagent.finished":
     case "tool.approval_required":
     case "tool.decided":
     case "tool.started":

@@ -15,16 +15,36 @@ export const delegateTaskTool = defineTool({
     if (!context.subagents) {
       throw new AgentError("Subagents are unavailable in this environment", "configuration");
     }
-    const result = await context.subagents.run({
-      parentRunId: context.runId,
-      task: input.task,
-      cwd: context.cwd,
-      signal: context.signal,
-    });
-    return {
-      summary: `Subagent ${result.status}: ${result.summary}`,
-      content: JSON.stringify(result),
-      success: result.status === "completed",
-    };
+    let childRunId: string | undefined;
+    try {
+      const result = await context.subagents.run({
+        parentRunId: context.runId,
+        parentCallId: context.callId,
+        task: input.task,
+        cwd: context.cwd,
+        signal: context.signal,
+        onStarted: async (runId) => {
+          childRunId = runId;
+          await context.onSubagentStarted?.(runId);
+        },
+      });
+      await context.onSubagentFinished?.(result);
+      return {
+        summary: `Subagent ${result.status}: ${result.summary}`,
+        content: JSON.stringify(result),
+        success: result.status === "completed",
+      };
+    } catch (error) {
+      if (childRunId) {
+        const message = error instanceof Error ? error.message : String(error);
+        await context.onSubagentFinished?.({
+          runId: childRunId,
+          status: "failed",
+          summary: message,
+          error: message,
+        });
+      }
+      throw error;
+    }
   },
 });

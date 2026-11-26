@@ -1,4 +1,4 @@
-import type { SubagentPort, ToolDefinition, ToolResult } from "@fidoo/core";
+import type { SubagentPort, SubagentResult, ToolDefinition, ToolResult } from "@fidoo/core";
 import { MemoryArtifactStore } from "@fidoo/node-runtime";
 
 export function executeTool(
@@ -10,6 +10,8 @@ export function executeTool(
     artifacts?: MemoryArtifactStore;
     signal?: AbortSignal;
     onOutput?(text: string): void;
+    onSubagentStarted?(runId: string): void;
+    onSubagentFinished?(result: SubagentResult): void;
     subagents?: SubagentPort;
   },
 ): Promise<ToolResult> {
@@ -20,6 +22,8 @@ export function executeTool(
     signal: options.signal ?? new AbortController().signal,
     artifacts: options.artifacts ?? new MemoryArtifactStore(),
     ...(options.onOutput ? { onOutput: options.onOutput } : {}),
+    ...(options.onSubagentStarted ? { onSubagentStarted: options.onSubagentStarted } : {}),
+    ...(options.onSubagentFinished ? { onSubagentFinished: options.onSubagentFinished } : {}),
     ...(options.subagents ? { subagents: options.subagents } : {}),
   });
 }

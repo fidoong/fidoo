@@ -3,7 +3,7 @@ import type { ExecutionObservation, ImageReference } from "../domain/messages.js
 import type { TaskPlanUpdate } from "../domain/plan.js";
 import type { VerificationEvidence } from "../domain/verification.js";
 import type { ArtifactReference, ArtifactStore } from "./artifacts.js";
-import type { SubagentPort } from "./subagent.js";
+import type { SubagentPort, SubagentResult } from "./subagent.js";
 import type { UserInputPort } from "./user-input.js";
 
 export type ToolEffect = "read" | "write" | "execute" | "network";
@@ -18,6 +18,8 @@ export interface ToolContext {
   signal: AbortSignal;
   artifacts: ArtifactStore;
   onOutput?(text: string): void;
+  onSubagentStarted?(runId: string): void | Promise<void>;
+  onSubagentFinished?(result: SubagentResult): void | Promise<void>;
 }
 
 export interface ToolResult {

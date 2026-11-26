@@ -12,18 +12,13 @@ import {
   LocalWorkspace,
   loadExecutionConfig,
   loadPermissionPolicy,
+  parseProviderKind,
   resolveProviderConnection,
 } from "@fidoo/node-runtime";
 import type { PublicRunEvent, RunSnapshot } from "@fidoo/protocol";
 import { Command, InvalidArgumentError } from "commander";
 import type { GlobalOptions, OutputFormat, RuntimeConfig } from "./config.js";
-import {
-  dataHome,
-  parseProvider,
-  parseThinking,
-  resolveRuntimeConfig,
-  serverArguments,
-} from "./config.js";
+import { dataHome, parseThinking, resolveRuntimeConfig, serverArguments } from "./config.js";
 import { renderFinal, renderPublicEvent } from "./output.js";
 
 const program = new Command();
@@ -35,7 +30,7 @@ program
   .option(
     "--provider <name>",
     "openai, deepseek, kimi, kimi-code, qwen, zhipu, xai, openrouter, anthropic, gemini, or custom",
-    parseProvider,
+    parseProviderKind,
   )
   .option("--model <name>", "model name; defaults to FIDOO_MODEL")
   .option("--base-url <url>", "OpenAI-compatible API base URL")
@@ -170,16 +165,16 @@ program
   .description("inspect local configuration without calling the provider")
   .action(async () => {
     const options = program.opts<GlobalOptions>();
-    const provider = parseProvider(options.provider ?? process.env.FIDOO_PROVIDER);
     const connection = resolveProviderConnection(
       {
-        provider,
+        ...(options.provider ? { provider: options.provider } : {}),
         ...(options.model ? { model: options.model } : {}),
         ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
         ...(options.thinking ? { thinking: options.thinking } : {}),
       },
       dataHome(),
     );
+    const provider = connection.provider;
     const model = connection.model;
     const baseURL = connection.baseURL;
     const configuredBaseURL = options.baseUrl ?? process.env.FIDOO_BASE_URL;

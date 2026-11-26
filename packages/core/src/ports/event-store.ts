@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../domain/events.js";
+import type { RunOrigin } from "../domain/run-origin.js";
 import type { RunStatus } from "../domain/run-state.js";
 
 export interface RunSummary {
@@ -6,6 +7,7 @@ export interface RunSummary {
   task: string;
   cwd: string;
   status: RunStatus;
+  origin?: RunOrigin;
   createdAt: string;
   updatedAt: string;
 }

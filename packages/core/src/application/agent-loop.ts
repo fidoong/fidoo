@@ -433,6 +433,22 @@ export class AgentLoop {
         ...(this.options.userInput ? { userInput: this.options.userInput } : {}),
         ...(this.options.subagents ? { subagents: this.options.subagents } : {}),
         onOutput: (text) => this.options.observer?.onToolOutputDelta?.(this.runId, call.id, text),
+        onSubagentStarted: async (childRunId) => {
+          await this.append("subagent.started", {
+            callId: call.id,
+            childRunId,
+            task: String((input as { task?: unknown }).task ?? ""),
+          });
+        },
+        onSubagentFinished: async (result) => {
+          await this.append("subagent.finished", {
+            callId: call.id,
+            childRunId: result.runId,
+            status: result.status,
+            summary: result.summary,
+            ...(result.error ? { error: result.error } : {}),
+          });
+        },
       });
       await this.append("tool.result", {
         result: {

@@ -44,5 +44,9 @@ export const taskOutputPageSchema = z.object({
 });
 export type TaskOutputPage = z.infer<typeof taskOutputPageSchema>;
 
-export const taskStopParamsSchema = z.object({ taskId: z.string().min(1) });
-export type TaskStopParams = z.infer<typeof taskStopParamsSchema>;
+export const taskStopParamsSchema = z.object({
+  taskId: z.string().min(1),
+  runId: z.string().min(1),
+  confirmed: z.literal(true),
+});
+export type TaskStopParams = z.input<typeof taskStopParamsSchema>;

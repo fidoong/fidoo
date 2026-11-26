@@ -5,6 +5,7 @@ import type {
   EventStore,
   RunService,
   RuntimeObserver,
+  ToolDefinition,
   UserInputPort,
   WorkspacePort,
 } from "@fidoo/core";
@@ -68,6 +69,7 @@ export interface AgentSettingsPort {
 }
 
 export interface AgentTaskPort {
+  get(taskId: string): Promise<BackgroundTask>;
   list(runId?: string): Promise<BackgroundTask[]>;
   stop(taskId: string): Promise<BackgroundTask>;
   readOutput(taskId: string, offset: number, limit: number): Promise<TaskOutputPage>;
@@ -435,7 +437,14 @@ export class AgentApi {
 
   private async list(params: unknown) {
     const input = runListParamsSchema.parse(params);
-    return (await this.options.eventStore.list()).slice(0, input.limit).map(toPublicSummary);
+    return (await this.options.eventStore.list())
+      .filter((summary) =>
+        input.parentRunId
+          ? summary.origin?.kind === "subagent" && summary.origin.parentRunId === input.parentRunId
+          : input.includeSubagents || summary.origin?.kind !== "subagent",
+      )
+      .slice(0, input.limit)
+      .map(toPublicSummary);
   }
 
   private async trace(params: unknown) {
@@ -460,7 +469,17 @@ export class AgentApi {
 
   private async stopTask(params: unknown) {
     const input = taskStopParamsSchema.parse(params);
-    return this.taskPort().stop(input.taskId);
+    const tasks = this.taskPort();
+    const task = await tasks.get(input.taskId);
+    if (task.runId !== input.runId) {
+      throw new AgentError("Background task is not owned by this run", "approval");
+    }
+    if (task.status !== "running") return task;
+    const decision = await this.runService.evaluateAction(input.runId, taskStopAction, input);
+    if (decision.action === "deny") {
+      throw new AgentError(`Cannot stop background task: ${decision.reason}`, "approval");
+    }
+    return tasks.stop(input.taskId);
   }
 
   private taskPort(): AgentTaskPort {
@@ -510,3 +529,16 @@ export class AgentApi {
     }
   }
 }
+
+const taskStopAction: ToolDefinition = {
+  name: "task_stop",
+  description: "Stop a running background process after explicit user confirmation",
+  effect: "execute",
+  risk: "high",
+  concurrency: "exclusive",
+  idempotency: "reconcile",
+  inputSchema: taskStopParamsSchema,
+  execute: async () => {
+    throw new AgentError("Direct task-stop action is evaluated by AgentApi", "configuration");
+  },
+};

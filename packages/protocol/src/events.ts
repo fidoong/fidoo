@@ -16,6 +16,8 @@ export const PUBLIC_RUN_EVENT_TYPES = [
   "context.compacted",
   "plan.updated",
   "mode.changed",
+  "subagent.started",
+  "subagent.finished",
   "plan.awaiting_approval",
   "plan.approved",
   "plan.rejected",

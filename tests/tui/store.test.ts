@@ -32,7 +32,7 @@ describe("TUI event projection", () => {
       }),
     );
     expect(state.phase).toBe("awaiting_approval");
-    expect(state.pendingApproval?.call.id).toBe("edit");
+    expect(state.pendingApprovals[0]?.call.id).toBe("edit");
     state = applyRunEvent(
       state,
       event(6, "tool.decided", { callId: "edit", decision: "approved", reason: "Approved" }),
@@ -277,7 +277,126 @@ describe("TUI event projection", () => {
     expect(state).toMatchObject({
       phase: "blocked",
       error: "Credentials required",
-      pendingApproval: undefined,
+      pendingApprovals: [],
     });
+  });
+});
+
+describe("TUI subagent projection", () => {
+  it("tracks child lifecycle by call id and restores it from canonical events", () => {
+    let state = initialTuiState();
+    state = applyRunEvent(state, event(1, "run.started", { task: "Root", cwd: "/workspace" }));
+    state = applyRunEvent(
+      state,
+      event(2, "subagent.started", {
+        callId: "delegate-1",
+        childRunId: "child-1",
+        task: "Inspect parser",
+      }),
+    );
+    expect(state.subagents).toHaveLength(1);
+    expect(state.subagents[0]).toMatchObject({
+      runId: "child-1",
+      status: "running",
+      task: "Inspect parser",
+    });
+    state = applyRunEvent(
+      state,
+      event(3, "subagent.finished", {
+        callId: "delegate-1",
+        childRunId: "child-1",
+        status: "completed",
+        summary: "Parser located",
+      }),
+    );
+    expect(state.subagents[0]).toMatchObject({
+      status: "completed",
+      summary: "Parser located",
+    });
+  });
+});
+
+describe("TUI concurrent approvals", () => {
+  it("keeps an earlier pending approval visible after a later call completes", () => {
+    let state = initialTuiState();
+    state = applyRunEvent(state, event(1, "run.started", { task: "Fetch", cwd: "/workspace" }));
+    state = applyRunEvent(
+      state,
+      event(2, "tool.proposed", {
+        call: { id: "call-a", name: "web_fetch", arguments: '{"url":"https://a.example"}' },
+      }),
+    );
+    state = applyRunEvent(
+      state,
+      event(3, "tool.proposed", {
+        call: { id: "call-b", name: "web_fetch", arguments: '{"url":"https://b.example"}' },
+      }),
+    );
+    state = applyRunEvent(
+      state,
+      event(4, "tool.approval_required", {
+        callId: "call-a",
+        risk: "medium",
+        reason: "Review A",
+      }),
+    );
+    state = applyRunEvent(
+      state,
+      event(5, "tool.approval_required", {
+        callId: "call-b",
+        risk: "medium",
+        reason: "Review B",
+      }),
+    );
+    expect(state.pendingApprovals.map((approval) => approval.call.id)).toEqual([
+      "call-a",
+      "call-b",
+    ]);
+    expect(state.phase).toBe("awaiting_approval");
+
+    state = applyRunEvent(
+      state,
+      event(6, "tool.decided", {
+        callId: "call-b",
+        decision: "approved",
+        reason: "Approved in TUI",
+      }),
+    );
+    expect(state.pendingApprovals.map((approval) => approval.call.id)).toEqual(["call-a"]);
+    expect(state.phase).toBe("awaiting_approval");
+    state = applyRunEvent(state, event(7, "tool.started", { callId: "call-b" }));
+    expect(state.phase).toBe("awaiting_approval");
+    state = applyRunEvent(
+      state,
+      event(8, "tool.result", {
+        result: {
+          callId: "call-b",
+          name: "web_fetch",
+          status: "success",
+          content: "B complete",
+        },
+      }),
+    );
+    expect(state.pendingApprovals[0]?.call.id).toBe("call-a");
+    expect(state.phase).toBe("awaiting_approval");
+
+    state = applyRunEvent(
+      state,
+      event(9, "tool.decided", {
+        callId: "call-a",
+        decision: "rejected",
+        reason: "Rejected in TUI",
+      }),
+    );
+    expect(state.pendingApprovals).toEqual([]);
+    expect(state.phase).toBe("running");
+  });
+
+  it("deduplicates a repeated approval request by call id", () => {
+    let state = initialTuiState();
+    const input = { callId: "call-a", risk: "medium", reason: "Review A" };
+    state = applyRunEvent(state, event(1, "tool.approval_required", input));
+    state = applyRunEvent(state, event(2, "tool.approval_required", input));
+    expect(state.pendingApprovals).toHaveLength(1);
   });
 });
